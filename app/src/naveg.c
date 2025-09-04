@@ -17,6 +17,7 @@
 #include "mode_navigation.h"
 #include "mode_popup.h"
 #include "mode_tools.h"
+#include "mode_builder.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -312,6 +313,9 @@ void naveg_init(void)
     //init popups
     PM_init();
 
+    //init builder mode
+    BM_init();
+
     g_device_mode = MODE_CONTROL;
     g_prev_device_mode = MODE_CONTROL;
     g_prev_shift_device_mode = MODE_CONTROL;
@@ -423,7 +427,9 @@ void naveg_ui_connection(uint8_t status)
         break;
 
         case MODE_BUILDER:
-            //not defined yet
+            //enter control mode
+            g_device_mode = MODE_CONTROL;
+            BM_set_state();
         break;
     }
 }
@@ -468,7 +474,7 @@ void naveg_enc_enter(uint8_t encoder)
         break;
 
         case MODE_BUILDER:
-            //not defined yet
+            BM_encoder_click(encoder);
         break;
 
         case MODE_SELFTEST:
@@ -611,7 +617,7 @@ void naveg_enc_down(uint8_t encoder)
         break;
 
         case MODE_BUILDER:
-            //not defined yet
+            BM_down(encoder);
         break;
 
         case MODE_SELFTEST:
@@ -713,7 +719,7 @@ void naveg_enc_up(uint8_t encoder)
         break;
 
         case MODE_BUILDER:
-            //not defined yet
+            BM_up(encoder);
         break;
 
         case MODE_SELFTEST:
@@ -1075,7 +1081,7 @@ void naveg_button_pressed(uint8_t button)
         break;
 
         case MODE_BUILDER:
-            //not defined yet
+            BM_button_pressed(button);
         break;
 
         case MODE_SHIFT:
@@ -1140,6 +1146,10 @@ void naveg_button_pressed(uint8_t button)
 
                 //TODO enter builder mode
                 case 2:
+                    // close the shitf menu
+                    exit_shift_menu(); 
+                    g_device_mode = MODE_BUILDER;
+                    BM_set_state();
                 break;
             }
         break;
@@ -1340,7 +1350,7 @@ void naveg_trigger_mode_change(uint8_t mode)
         break;
 
         case MODE_BUILDER:
-            //not defined yet
+            BM_set_state();
         break;
 
         case MODE_SELFTEST:

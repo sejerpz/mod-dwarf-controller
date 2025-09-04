@@ -159,6 +159,8 @@ bp_list_t *data_parse_pedalboards_list(char **list_data, uint32_t list_count);
 void data_free_pedalboards_list(bp_list_t *bp_list);
 bp_list_t *data_parse_snapshots_list(char **list_data, uint32_t list_count);
 void data_free_snapshots_list(bp_list_t *bp_list);
+bp_list_t *data_parse_plugins_list(char **list_data, uint32_t list_count);
+void data_free_plugins_list(bp_list_t *bp_list);
 
 /*
 ************************************************************************************************************************

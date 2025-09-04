@@ -856,7 +856,7 @@ void screen_tittle(int8_t pb_ss)
         pb_ss = g_control_mode_header;
 
     //we dont display inside a menu
-    if (naveg_get_current_mode() != MODE_CONTROL) return;
+    if (naveg_get_current_mode() != MODE_CONTROL && naveg_get_current_mode() != MODE_BUILDER) return;
 
     //we dont display a not selected mode
     if (g_control_mode_header != pb_ss) return;
@@ -1495,8 +1495,11 @@ void screen_shift_overlay(int8_t prev_mode, int16_t *item_ids, uint8_t ui_connec
     if (previous_mode == MODE_TOOL_MENU)
         glcd_rect_invert(display, 49, DISPLAY_HEIGHT - 8, 30, 8);
 
-    //draw the third box, TODO BUILDER MODE
-    glcd_text(display, 96, DISPLAY_HEIGHT - 7, "-", Terminal3x5, GLCD_BLACK);
+    //draw the third box only if we are not already in that mode, BUILDER MODE
+    if (naveg_get_current_mode() != MODE_BUILDER)
+    {
+        glcd_text(display, 90, DISPLAY_HEIGHT - 7, "EDIT", Terminal3x5, GLCD_BLACK);
+    }
 
     //print the 3 quick controls
     for (i = 0; i < 3; i++)
@@ -1772,4 +1775,96 @@ void screen_text_box(uint8_t x, uint8_t y, const char *text)
     text_box.y = y;
     text_box.x = x;
     widget_textbox(hardware_display, &text_box);
+}
+
+
+void screen_plugins_list(menu_item_t *item)
+{
+    glcd_t *display;
+    display = hardware_glcds(0);
+
+    // clear screen
+    glcd_clear(display, GLCD_WHITE);
+
+    // draws the title
+    textbox_t title_box = {};
+    title_box.color = GLCD_BLACK;
+    title_box.mode = TEXT_SINGLE_LINE;
+    title_box.font = Terminal3x5;
+    title_box.top_margin = 1;
+    title_box.align = ALIGN_CENTER_TOP;
+    title_box.text = item->name;
+    widget_textbox(display, &title_box);
+
+    //invert the title area
+    glcd_rect_invert(display, 0, 0, DISPLAY_WIDTH, 7);
+
+    print_menu_outlines();
+
+    //print the 3 buttons
+    //draw the first box, back
+    glcd_text(display, 18, DISPLAY_HEIGHT - 7, "< BACK", Terminal3x5, GLCD_BLACK);
+
+    //draw the second box, TODO Builder MODE
+    glcd_text(display, 62, DISPLAY_HEIGHT - 7, "-", Terminal3x5, GLCD_BLACK);
+
+    //draw the third box, save PB
+    glcd_text(display, 88, DISPLAY_HEIGHT - 7, "SELECT", Terminal3x5, GLCD_BLACK);
+
+    // menu list
+    listbox_t list;
+    list.x = 6;
+    list.y = 12;
+    list.width = 116;
+    list.height = 40;
+    list.color = GLCD_BLACK;
+    list.font = Terminal3x5;
+    list.line_space = 2;
+    list.line_top_margin = 1;
+    list.line_bottom_margin = 1;
+    list.text_left_margin = 2;
+
+    list.hover = item->data.hover;
+    list.selected = item->data.selected;
+    list.count = MENU_VISIBLE_LIST_CUT;
+    list.list = item->data.list;
+    widget_menu_listbox(display, &list);
+}
+
+/*
+ * BUILDER: draw a plugin edit screen page
+ */
+
+void screen_plugin_edit(control_t **g_controls)
+{
+    glcd_t *display;
+    display = hardware_glcds(0);
+
+    // clear screen
+    glcd_clear(display, GLCD_WHITE);
+
+    screen_tittle(-1);
+
+    //print outlines
+    print_menu_outlines();
+
+    BM_draw_encoders();
+
+    for (int i = 0; i < ENCODERS_COUNT; i++)
+    {
+        // checks the function assigned to foot and update the footer
+        if (g_controls[i])
+        {
+            screen_encoder(g_controls[i], i);
+        }
+        else
+        {
+            screen_encoder(NULL, i);
+        }
+    }
+
+    glcd_text(display, 18, DISPLAY_HEIGHT - 7, "PLUGIN", Terminal3x5, GLCD_BLACK);
+    glcd_text(display, 62, DISPLAY_HEIGHT - 7, "-", Terminal3x5, GLCD_BLACK);
+    glcd_text(display, 90, DISPLAY_HEIGHT - 7, "EXIT", Terminal3x5, GLCD_BLACK);
+
 }

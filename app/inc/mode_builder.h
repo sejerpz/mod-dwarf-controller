@@ -5,8 +5,8 @@
 ************************************************************************************************************************
 */
 
-#ifndef TOOL_MODE_H
-#define TOOL_MODE_H
+#ifndef MODE_BUILDER_H
+#define MODE_BUILDER_H
 
 
 /*
@@ -55,9 +55,22 @@
 ************************************************************************************************************************
 */
 
-void tool_mode_trigger_tool(uint8_t tool, uint8_t status);
-uint8_t tool_mode_status(uint8_t tool);
-uint8_t tool_mode_has_tool_enabled(uint8_t display);
+//void tool_mode_trigger_tool(uint8_t tool, uint8_t status);
+//uint8_t tool_mode_status(uint8_t tool);
+//uint8_t tool_mode_has_tool_enabled(uint8_t display);
+void BM_init(void);
+void BM_clear(void);
+void BM_set_state(void);
+void BM_encoder_click(uint8_t encoder);
+void BM_draw_encoders(void);
+void BM_button_pressed(uint8_t button);
+void BM_print_screen(void);
+
+void BM_add_control(control_t *control, uint8_t protocol);
+void BM_remove_control(uint8_t hw_id);
+void BM_print_control_overlay(control_t *control, uint16_t overlay_time);
+     
+void BM_close_overlay(void);
 
 /*
 ************************************************************************************************************************

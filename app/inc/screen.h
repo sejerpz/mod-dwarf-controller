@@ -92,6 +92,8 @@ void screen_update_tuner_input(uint8_t input);
 void screen_update_tuner_ref_freq(int8_t ref_freq);
 void print_tripple_menu_items(menu_item_t *item_child, uint8_t knob, uint8_t tool_mode);
 void screen_text_box(uint8_t x, uint8_t y, const char *text);
+void screen_plugins_list(menu_item_t *item);
+void screen_plugin_edit(control_t **g_controls);
 
 /*
 ************************************************************************************************************************
