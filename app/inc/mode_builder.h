@@ -62,6 +62,8 @@ void BM_init(void);
 void BM_clear(void);
 void BM_set_state(void);
 void BM_encoder_click(uint8_t encoder);
+void BM_up(uint8_t encoder);
+void BM_down(uint8_t encoder);
 void BM_draw_encoders(void);
 void BM_button_pressed(uint8_t button);
 void BM_print_screen(void);

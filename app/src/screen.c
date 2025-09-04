@@ -1808,27 +1808,38 @@ void screen_plugins_list(menu_item_t *item)
     //draw the second box, TODO Builder MODE
     glcd_text(display, 62, DISPLAY_HEIGHT - 7, "-", Terminal3x5, GLCD_BLACK);
 
-    //draw the third box, save PB
-    glcd_text(display, 88, DISPLAY_HEIGHT - 7, "SELECT", Terminal3x5, GLCD_BLACK);
 
     // menu list
-    listbox_t list;
-    list.x = 6;
-    list.y = 12;
-    list.width = 116;
-    list.height = 40;
-    list.color = GLCD_BLACK;
-    list.font = Terminal3x5;
-    list.line_space = 2;
-    list.line_top_margin = 1;
-    list.line_bottom_margin = 1;
-    list.text_left_margin = 2;
+    if (item->data.list)
+    {
+        //draw the third box, save PB
+        glcd_text(display, 84, DISPLAY_HEIGHT - 7, "SELECT", Terminal3x5, GLCD_BLACK);
 
-    list.hover = item->data.hover;
-    list.selected = item->data.selected;
-    list.count = MENU_VISIBLE_LIST_CUT;
-    list.list = item->data.list;
-    widget_menu_listbox(display, &list);
+        listbox_t list;
+        list.x = 6;
+        list.y = 12;
+        list.width = 116;
+        list.height = 40;
+        list.color = GLCD_BLACK;
+        list.font = Terminal3x5;
+        list.line_space = 2;
+        list.line_top_margin = 1;
+        list.line_bottom_margin = 1;
+        list.text_left_margin = 2;
+
+        list.hover = item->data.hover;
+        list.selected = item->data.selected;
+        list.count = MENU_VISIBLE_LIST_CUT;
+        list.list = item->data.list;
+        widget_menu_listbox(display, &list);
+    }
+    else
+    {
+        //draw the third box, save PB
+        glcd_text(display, 96, DISPLAY_HEIGHT - 7, "-", Terminal3x5, GLCD_BLACK);
+
+        glcd_text(display, DISPLAY_WIDTH / 2 - 35, DISPLAY_HEIGHT / 2 -5, "NO PLUGINS", Terminal7x8, GLCD_BLACK);
+    }
 }
 
 /*
@@ -1847,8 +1858,6 @@ void screen_plugin_edit(control_t **g_controls)
 
     //print outlines
     print_menu_outlines();
-
-    BM_draw_encoders();
 
     for (int i = 0; i < ENCODERS_COUNT; i++)
     {

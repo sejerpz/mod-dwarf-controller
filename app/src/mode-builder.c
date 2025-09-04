@@ -65,11 +65,12 @@ enum UIStates {
 static enum UIStates uiState = DEFAULT;
 static bp_list_t *g_plugins; /* list of pedalboard plugins effects */
 static uint8_t g_plugins_loaded = 0;
-static int32_t g_current_plugin, g_selected_plugin;
+static uint8_t g_current_plugin, g_selected_plugin;
 static control_t *g_controls[ENCODERS_COUNT];
 static list_clone_t g_list_clone[ENCODERS_COUNT];
 static int8_t g_current_overlay_actuator = -1;
 static bool g_list_click = 0;
+static menu_item_t pluginMenuItem;
 
 /*
 ************************************************************************************************************************
@@ -94,6 +95,7 @@ static void encoder_control_add(control_t *control);
 static void encoder_control_rm(uint8_t hw_id);
 static void reset_list_encoders(void);
 static void clone_list_encoders(control_t *control);
+static void request_plugins(uint8_t dir);
 
 // control assigned to display
 static void encoder_control_add(control_t *control)
@@ -288,20 +290,12 @@ static void clone_list_encoders(control_t *control)
 */
 void BM_init(void)
 {
-
+    pluginMenuItem.name = strdup("Plugins");
 }
 
 void BM_clear(void)
 {
 }
-
-menu_item_t item;
-char *items[] = {
-    "My Plugin 1", "My Plugin 2", "My Plugin 3", "My Plugin 4",
-    "My Plugin 5", "My Plugin 6", "My Plugin 7", "My Plugin 8",
-    "My Plugin 9", "My Plugin 10", "My Plugin 11", "My Plugin 12",
-     NULL
-};
 
 /*
  * Called on builder mode enter
@@ -309,15 +303,9 @@ char *items[] = {
 void BM_set_state(void)
 {
     uiState = PLUGIN_SELECT;
-    item.name = "Plugins";
-    item.data.list = items;
-    item.data.list_count = 12;
-    item.data.selected = g_current_plugin;
-    item.data.hover = 0;
-    
     g_current_plugin = 0;
     g_selected_plugin = 0;
-    //request_plugins(PAGE_DIR_INIT);
+    request_plugins(PAGE_DIR_INIT);
     //CM_set_leds();
     BM_print_screen();
 }
@@ -330,9 +318,13 @@ void BM_encoder_click(uint8_t encoder)
         case 0:
             if (uiState == PLUGIN_SELECT)
             {
-                g_selected_plugin = g_current_plugin;
-                uiState = PLUGIN_EDIT;
-                BM_print_screen();
+                // if there is some plugin
+                if (pluginMenuItem.data.list_count > 0) {
+
+                    g_selected_plugin = g_current_plugin;
+                    uiState = PLUGIN_EDIT;
+                    BM_print_screen();
+                }
             }
         break;
         
@@ -348,12 +340,14 @@ void BM_up(uint8_t encoder)
             switch (uiState)
             {
                 case PLUGIN_SELECT:
-                    g_current_plugin++;
-                    if (g_current_plugin >= item.data.list_count)
-                        g_current_plugin = 0;
+                    if (g_current_plugin > 0)
+                        g_current_plugin--;
+                    else
+                        g_current_plugin = pluginMenuItem.data.list_count - 1;
 
-                    item.data.hover = g_current_plugin;
+                    pluginMenuItem.data.hover = g_current_plugin;
                     BM_print_screen();
+
                 break;
                 case DEFAULT:
                 case PLUGIN_EDIT:
@@ -371,13 +365,13 @@ void BM_down(uint8_t encoder)
             switch (uiState)
             {
                 case PLUGIN_SELECT:
-                    g_current_plugin--;
-                    if (g_current_plugin == 0)
-                        g_current_plugin = item.data.list_count - 1;
+                    if (g_current_plugin >= pluginMenuItem.data.list_count - 1)
+                        g_current_plugin = 0;
+                    else
+                        g_current_plugin++;
 
-                    item.data.hover = g_current_plugin;
+                    pluginMenuItem.data.hover = g_current_plugin;
                     BM_print_screen();
-                    
                 break;
                 case DEFAULT:
                 case PLUGIN_EDIT:
@@ -397,7 +391,12 @@ void BM_button_pressed(uint8_t button)
     {
         //enter menu
         case 0:
-            if (uiState == PLUGIN_SELECT)
+            if (uiState == PLUGIN_EDIT)
+            {
+                uiState = PLUGIN_SELECT;
+                request_plugins(PAGE_DIR_INIT);
+            }
+            else
             {
                 uiState = PLUGIN_EDIT;
             }
@@ -409,9 +408,13 @@ void BM_button_pressed(uint8_t button)
         case 2:
             if (uiState == PLUGIN_SELECT) 
             {
-                uiState = PLUGIN_EDIT;
-                g_selected_plugin = g_current_plugin;
-            } else {
+                if (pluginMenuItem.data.list_count > 0) {
+                    uiState = PLUGIN_EDIT;
+                    g_selected_plugin = g_current_plugin;
+                }
+            }
+            else
+            {
                 naveg_trigger_mode_change(MODE_CONTROL);
             }
         break;
@@ -467,7 +470,6 @@ void BM_print_control_overlay(control_t *control, uint16_t overlay_time)
 //function that draws the 3 encoders
 void BM_draw_encoders(void)
 {
-    uint8_t i;
 
    
 }
@@ -487,7 +489,7 @@ void BM_print_screen(void)
     switch (uiState)
     {
         case PLUGIN_SELECT:
-            screen_plugins_list(&item);
+            screen_plugins_list(&pluginMenuItem);
         break;
         case PLUGIN_EDIT:
             screen_plugin_edit(g_controls);
@@ -499,12 +501,15 @@ void BM_print_screen(void)
     //we are sure we are not in overlay anymore
     g_current_overlay_actuator = -1;
 
-    char str[20];
-    sprintf(str, "%d", (int)g_current_plugin);
-    screen_text_box(10, 20, str);
+    // char str[20];
+    // sprintf(str, "%d", (int)g_current_plugin);
+    // screen_text_box(10, 20, str);
 
-    sprintf(str, "%d", (int)g_selected_plugin);
-    screen_text_box(10, 40, str);
+    // sprintf(str, "%d", (int)g_selected_plugin);
+    // screen_text_box(10, 40, str);
+
+    // sprintf(str, "%d", (int)pluginMenuItem.data.list_count);
+    // screen_text_box(10, 30, str);
 }
 
 /*
@@ -538,6 +543,10 @@ void BM_print_screen(void)
     }
     else
         g_plugins_loaded = 0;
+
+    item->data.list = g_plugins->names;
+    item->data.list_count = count / 2; // why count is two time the effective # elements?
+    item->data.selected = g_current_plugin;
 }
 
 /*
@@ -550,7 +559,7 @@ static void request_plugins(uint8_t dir)
     memset(buffer, 0, sizeof buffer);
 
     // sets the response callback
-    ui_comm_webgui_set_response_cb(parse_plugins_list, NULL);
+    ui_comm_webgui_set_response_cb(parse_plugins_list, &pluginMenuItem);
     //clear the buffer
     ui_comm_webgui_clear_tx_buffer();
 
