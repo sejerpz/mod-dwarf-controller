@@ -283,6 +283,104 @@ static void clone_list_encoders(control_t *control)
     }
 }
 
+
+/*
+ * Plugin effect navigation
+ */
+
+ static void parse_plugins_list(void *data, menu_item_t *item)
+{
+    (void) item;
+    char **list = data;
+
+    //error, dont parse when mod-ui gives error
+    if (atoi(list[1]) == -1)
+        return;
+
+    uint32_t count = strarr_length(&list[5]);
+
+    // free the navigation pedalboads list
+    if (g_plugins)
+        data_free_snapshots_list(g_plugins);
+
+    // parses the list
+    g_plugins = data_parse_plugins_list(&list[5], count);
+
+    if (g_plugins) {
+        g_plugins->menu_max = (atoi(list[2]));
+        g_plugins->page_min = (atoi(list[3]));
+        g_plugins->page_max = (atoi(list[4])); 
+    
+        g_plugins_loaded = 1;
+    }
+    else
+        g_plugins_loaded = 0;
+
+    item->data.list = g_plugins->names;
+    item->data.list_count = count / 2; // why count is two time the effective # elements?
+    item->data.selected = g_current_plugin;
+}
+
+/*
+ * ask a list of loaded plugins in the current pedalboard
+ */
+static void request_plugins(uint8_t dir)
+{
+    uint8_t i;
+    char buffer[40];
+    memset(buffer, 0, sizeof buffer);
+
+    // sets the response callback
+    ui_comm_webgui_set_response_cb(parse_plugins_list, &pluginMenuItem);
+    //clear the buffer
+    ui_comm_webgui_clear_tx_buffer();
+
+    i = copy_command((char *)buffer, CMD_BUILDER_EFFECTS);
+
+    uint8_t bitmask = 0;
+    if (dir == 1)
+        bitmask |= FLAG_PAGINATION_PAGE_UP;
+    else if (dir == 2)
+        bitmask |= FLAG_PAGINATION_INITIAL_REQ;
+
+    // insert the direction on buffer
+    i += int_to_str(bitmask, &buffer[i], sizeof(buffer) - i, 0);
+
+    // inserts one space
+    buffer[i++] = ' ';
+
+    // insert the current hover on buffer
+    if ((dir == PAGE_DIR_INIT)) {
+        if (g_plugins && g_plugins->selected == -1)
+            i += int_to_str(0, &buffer[i], sizeof(buffer) - i, 0);
+        else
+            i += int_to_str(g_current_plugin, &buffer[i], sizeof(buffer) - i, 0);
+    }
+    else
+        i += int_to_str(g_plugins->hover, &buffer[i], sizeof(buffer) - i, 0);
+
+    buffer[i++] = 0;
+
+    int32_t prev_hover = g_current_plugin;
+    int32_t prev_selected = g_current_plugin;
+
+    if (g_plugins) {
+        prev_hover = g_plugins->hover;
+        prev_selected = g_plugins->selected;
+    }
+
+    // sends the data to GUI
+    ui_comm_webgui_send(buffer, i);
+
+    // waits the pedalboards list be received
+    ui_comm_webgui_wait_response();
+
+    if (g_plugins) {
+        g_plugins->hover = prev_hover;
+        g_plugins->selected = prev_selected;
+    }
+}
+
 /*
 ************************************************************************************************************************
 *           GLOBAL FUNCTIONS
@@ -510,101 +608,4 @@ void BM_print_screen(void)
 
     // sprintf(str, "%d", (int)pluginMenuItem.data.list_count);
     // screen_text_box(10, 30, str);
-}
-
-/*
- * Plugin effect navigation
- */
-
- static void parse_plugins_list(void *data, menu_item_t *item)
-{
-    (void) item;
-    char **list = data;
-
-    //error, dont parse when mod-ui gives error
-    if (atoi(list[1]) == -1)
-        return;
-
-    uint32_t count = strarr_length(&list[5]);
-
-    // free the navigation pedalboads list
-    if (g_plugins)
-        data_free_snapshots_list(g_plugins);
-
-    // parses the list
-    g_plugins = data_parse_plugins_list(&list[5], count);
-
-    if (g_plugins) {
-        g_plugins->menu_max = (atoi(list[2]));
-        g_plugins->page_min = (atoi(list[3]));
-        g_plugins->page_max = (atoi(list[4])); 
-    
-        g_plugins_loaded = 1;
-    }
-    else
-        g_plugins_loaded = 0;
-
-    item->data.list = g_plugins->names;
-    item->data.list_count = count / 2; // why count is two time the effective # elements?
-    item->data.selected = g_current_plugin;
-}
-
-/*
- * ask a list of loaded plugins in the current pedalboard
- */
-static void request_plugins(uint8_t dir)
-{
-    uint8_t i;
-    char buffer[40];
-    memset(buffer, 0, sizeof buffer);
-
-    // sets the response callback
-    ui_comm_webgui_set_response_cb(parse_plugins_list, &pluginMenuItem);
-    //clear the buffer
-    ui_comm_webgui_clear_tx_buffer();
-
-    i = copy_command((char *)buffer, CMD_BUILDER_EFFECTS);
-
-    uint8_t bitmask = 0;
-    if (dir == 1)
-        bitmask |= FLAG_PAGINATION_PAGE_UP;
-    else if (dir == 2)
-        bitmask |= FLAG_PAGINATION_INITIAL_REQ;
-
-    // insert the direction on buffer
-    i += int_to_str(bitmask, &buffer[i], sizeof(buffer) - i, 0);
-
-    // inserts one space
-    buffer[i++] = ' ';
-
-    // insert the current hover on buffer
-    if ((dir == PAGE_DIR_INIT)) {
-        if (g_plugins && g_plugins->selected == -1)
-            i += int_to_str(0, &buffer[i], sizeof(buffer) - i, 0);
-        else
-            i += int_to_str(g_current_plugin, &buffer[i], sizeof(buffer) - i, 0);
-    }
-    else
-        i += int_to_str(g_plugins->hover, &buffer[i], sizeof(buffer) - i, 0);
-
-    buffer[i++] = 0;
-
-    int32_t prev_hover = g_current_plugin;
-    int32_t prev_selected = g_current_plugin;
-
-    if (g_plugins) {
-        prev_hover = g_plugins->hover;
-        prev_selected = g_plugins->selected;
-    }
-
-    // sends the data to GUI
-    ui_comm_webgui_send(buffer, i);
-
-    // waits the pedalboards list be received
-    ui_comm_webgui_wait_response();
-
-    if (g_plugins) {
-        g_plugins->hover = prev_hover;
-        g_plugins->selected = prev_selected;
-    }
 }
