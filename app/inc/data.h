@@ -131,6 +131,7 @@ typedef struct MENU_POPUP_T {
     const char *popup_content;
 } menu_popup_t;
 
+
 /*
 ************************************************************************************************************************
 *           GLOBAL VARIABLES

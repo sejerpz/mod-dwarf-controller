@@ -168,6 +168,7 @@ void widget_popup(glcd_t *display, popup_t *popup);
 //icons. TODO its more efficient to make bitmaps of some these
 void icon_snapshot(glcd_t *display, uint8_t x, uint8_t y);
 void icon_pedalboard(glcd_t *display, uint8_t x, uint8_t y);
+void icon_plugin(glcd_t *display, uint8_t x, uint8_t y);
 void icon_overlay(glcd_t *display, uint8_t x, uint8_t y);
 void icon_bank(glcd_t *display, uint8_t x, uint8_t y);
 void icon_pb_selected(glcd_t *display, uint8_t x, uint8_t y);

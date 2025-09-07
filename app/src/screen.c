@@ -16,6 +16,8 @@
 #include "mode_tools.h"
 #include "mode_navigation.h"
 #include <string.h>
+#include <stdio.h>
+#include "loggin.h"
 
 /*
 ************************************************************************************************************************
@@ -76,17 +78,15 @@ extern int8_t g_tuner_reference_freq;
 ************************************************************************************************************************
 */
 
-void print_menu_outlines(void)
+
+/*
+* Print the 3 boxes for the menu items
+ */
+void print_menu_boxes(void)
 {
     glcd_t *display = hardware_glcds(0);
-    glcd_vline(display, 0, 7, DISPLAY_HEIGHT - 11, GLCD_BLACK);
-    glcd_vline(display, DISPLAY_WIDTH-1, 7, DISPLAY_HEIGHT - 11, GLCD_BLACK);
-    glcd_hline(display, 0, DISPLAY_HEIGHT - 5, 14, GLCD_BLACK);
-    glcd_hline(display, 45, DISPLAY_HEIGHT - 5, 3, GLCD_BLACK);
-    glcd_hline(display, 79, DISPLAY_HEIGHT - 5, 3, GLCD_BLACK);
-    glcd_hline(display, 112, DISPLAY_HEIGHT - 5, 15, GLCD_BLACK);
 
-#ifdef RECT_MENU_BOXES
+    #ifdef RECT_MENU_BOXES
 
     glcd_rect(display, 14, DISPLAY_HEIGHT - 9, 31, 9, GLCD_BLACK);
     glcd_rect(display, 48, DISPLAY_HEIGHT - 9, 31, 9, GLCD_BLACK);
@@ -113,7 +113,25 @@ void print_menu_outlines(void)
     glcd_vline(display, 112, DISPLAY_HEIGHT-8, 7, GLCD_BLACK);
 
 #endif
+}
 
+/*
+ * Print the outlines of the menu
+ * and a box around the screen
+ */
+ 
+void print_menu_outlines(void)
+{
+    glcd_t *display = hardware_glcds(0);
+    glcd_vline(display, 0, 7, DISPLAY_HEIGHT - 11, GLCD_BLACK);
+    glcd_vline(display, DISPLAY_WIDTH-1, 7, DISPLAY_HEIGHT - 11, GLCD_BLACK);
+    glcd_hline(display, 0, DISPLAY_HEIGHT - 5, 14, GLCD_BLACK);
+    glcd_hline(display, 45, DISPLAY_HEIGHT - 5, 3, GLCD_BLACK);
+    glcd_hline(display, 79, DISPLAY_HEIGHT - 5, 3, GLCD_BLACK);
+    glcd_hline(display, 112, DISPLAY_HEIGHT - 5, 15, GLCD_BLACK);
+
+
+    print_menu_boxes();
 }
 
 void print_tripple_menu_items(menu_item_t *item_child, uint8_t knob, uint8_t tool_mode)
@@ -375,7 +393,7 @@ void screen_group_foots(uint8_t toggle)
     g_foots_grouped = toggle;
 }
 
-void screen_encoder(control_t *control, uint8_t encoder)
+void screen_encoder(const control_t *control, uint8_t encoder)
 {    
     glcd_t *display = hardware_glcds(0);
 
@@ -629,7 +647,7 @@ void screen_page_index(uint8_t current, uint8_t available)
     glcd_text(display, 3, 56, str_current, Terminal5x7, GLCD_BLACK);
 }
 
-void screen_encoder_container(uint8_t current_encoder_page)
+static void screen_encoder_containers(uint8_t mode, uint8_t current_page, uint8_t page_count)
 {
     glcd_t *display = hardware_glcds(0);
 
@@ -642,46 +660,97 @@ void screen_encoder_container(uint8_t current_encoder_page)
     glcd_hline(display, 0, 13, DISPLAY_WIDTH, GLCD_BLACK);
     glcd_vline(display, 0, 13, 34, GLCD_BLACK);
     glcd_vline(display, DISPLAY_WIDTH - 1, 13, 34, GLCD_BLACK);
-
-    //draw the 3 boxes
-    glcd_rect(display, 31, 43, 21, 9, GLCD_BLACK);
-    glcd_rect(display, 54, 43, 21, 9, GLCD_BLACK);
-    glcd_rect(display, 77, 43, 21, 9, GLCD_BLACK);
-
+  
     //draw the bottom lines
     glcd_hline(display, 0,  47, 31, GLCD_BLACK);
-    glcd_hline(display, 52, 47, 2, GLCD_BLACK);
-    glcd_hline(display, 75, 47, 2, GLCD_BLACK);
     glcd_hline(display, 97, 47, 31, GLCD_BLACK);
 
-    //indicator 1
-    glcd_text(display, 40, 45, "I", Terminal3x5, GLCD_BLACK);
-
-    //indicator 2
-    glcd_text(display, 61, 45, "II", Terminal3x5, GLCD_BLACK);
-
-    //indicator 3
-    glcd_text(display, 82, 45, "III", Terminal3x5, GLCD_BLACK);
-
-    //invert the current one
-    switch (current_encoder_page)
+    if (mode == 1)
     {
-        case 0:
-            glcd_rect_invert(display, 32, 44, 19, 7);
-        break;
+        char buffer[10];
+        int len;
 
-        case 1:
-            glcd_rect_invert(display, 55, 44, 19, 7);
-        break;
+        if (page_count > 0)
+        {
+            len = snprintf(buffer, 10, "%d / %d", current_page + 1, page_count);
+        }
+        else
+        {
+            len = 8;
+            strcpy(buffer, "no pages");
+        }
 
-        case 2:
-            glcd_rect_invert(display, 78, 44, 19, 7);;
-        break;
-
-        default:
-            glcd_rect_invert(display, 32, 44, 19, 7);
-        break;
+        if (len < 0)
+        {
+            // somethig went wrong with snprintf
+            strcpy(buffer, "err");
+        }
+      
+        glcd_rect(display, 31, 43, 66, 9, GLCD_BLACK);
+        // current page indicator
+        glcd_text(display, (DISPLAY_WIDTH / 2) - (3 * len) + 9, 45, buffer, Terminal3x5, GLCD_BLACK);
     }
+    else
+    {
+        //draw the 3 boxes
+        glcd_rect(display, 31, 43, 21, 9, GLCD_BLACK);
+        glcd_rect(display, 54, 43, 21, 9, GLCD_BLACK);
+        glcd_rect(display, 77, 43, 21, 9, GLCD_BLACK);
+
+        //draw the devision lines between boxes
+        glcd_hline(display, 52, 47, 2, GLCD_BLACK);
+        glcd_hline(display, 75, 47, 2, GLCD_BLACK);
+
+        // three subpages mode
+        //indicator 1
+        glcd_text(display, 40, 45, "I", Terminal3x5, GLCD_BLACK);
+
+        //indicator 2
+        glcd_text(display, 61, 45, "II", Terminal3x5, GLCD_BLACK);
+
+        //indicator 3
+        glcd_text(display, 82, 45, "III", Terminal3x5, GLCD_BLACK);
+
+        //invert the current one
+        switch (current_page)
+        {
+            case 0:
+                glcd_rect_invert(display, 32, 44, 19, 7);
+            break;
+
+            case 1:
+                glcd_rect_invert(display, 55, 44, 19, 7);
+            break;
+
+            case 2:
+                glcd_rect_invert(display, 78, 44, 19, 7);;
+            break;
+
+            default:
+                glcd_rect_invert(display, 32, 44, 19, 7);
+            break;
+        }
+    }
+}
+
+/*
+ * print the 3 encoder containers
+ * with the standard 3 subpages button and the current page highlighted
+ */ 
+void screen_encoder_container(uint8_t current_encoder_page)
+{
+    screen_encoder_containers(0, current_encoder_page, 3);
+}
+
+/*
+ * print the 3 encoder containers
+ * with the scroll button and the current page highlighted
+ * 
+ * used on the builder for plugin parameters
+ */
+void screen_encoder_container_paged(uint8_t current_page, uint8_t page_count)
+{
+    screen_encoder_containers(1, current_page, page_count);
 }
 
 void screen_footer(uint8_t foot_id, const char *name, const char *value, int16_t property)
@@ -1802,18 +1871,15 @@ void screen_plugins_list(menu_item_t *item)
     print_menu_outlines();
 
     //print the 3 buttons
-    //draw the first box, back
-    glcd_text(display, 18, DISPLAY_HEIGHT - 7, "< BACK", Terminal3x5, GLCD_BLACK);
+    glcd_text(display, 61, DISPLAY_HEIGHT - 7, "-", Terminal3x5, GLCD_BLACK);
 
-    //draw the second box, TODO Builder MODE
-    glcd_text(display, 62, DISPLAY_HEIGHT - 7, "-", Terminal3x5, GLCD_BLACK);
-
+    glcd_text(display, 91, DISPLAY_HEIGHT - 7, "EXIT", Terminal3x5, GLCD_BLACK);
 
     // menu list
     if (item->data.list)
     {
         //draw the third box, save PB
-        glcd_text(display, 84, DISPLAY_HEIGHT - 7, "SELECT", Terminal3x5, GLCD_BLACK);
+        glcd_text(display, 18, DISPLAY_HEIGHT - 7, "SELECT", Terminal3x5, GLCD_BLACK);
 
         listbox_t list;
         list.x = 6;
@@ -1835,10 +1901,9 @@ void screen_plugins_list(menu_item_t *item)
     }
     else
     {
-        //draw the third box, save PB
-        glcd_text(display, 96, DISPLAY_HEIGHT - 7, "-", Terminal3x5, GLCD_BLACK);
+        glcd_text(display, 34, DISPLAY_HEIGHT - 7, "-", Terminal3x5, GLCD_BLACK);
 
-        glcd_text(display, DISPLAY_WIDTH / 2 - 35, DISPLAY_HEIGHT / 2 -5, "NO PLUGINS", Terminal7x8, GLCD_BLACK);
+        glcd_text(display, DISPLAY_WIDTH / 2 - 32, DISPLAY_HEIGHT / 2 -5, "NO PLUGINS", Terminal7x8, GLCD_BLACK);
     }
 }
 
@@ -1846,7 +1911,7 @@ void screen_plugins_list(menu_item_t *item)
  * BUILDER: draw a plugin edit screen page
  */
 
-void screen_plugin_edit(control_t **g_controls)
+void screen_plugin_edit(plugin_edit_t *model)
 {
     glcd_t *display;
     display = hardware_glcds(0);
@@ -1854,17 +1919,42 @@ void screen_plugin_edit(control_t **g_controls)
     // clear screen
     glcd_clear(display, GLCD_WHITE);
 
-    screen_tittle(-1);
+    //screen_tittle(-1);
+    int title_len;
 
-    //print outlines
-    print_menu_outlines();
+    // current plugin name
+    if (model->plugin_name)
+    {
+        title_len = strlen(model->plugin_name);
+        glcd_text(display, 
+                  ((DISPLAY_WIDTH / 2) - (3 * title_len) + 7),
+                  1,
+                  model->plugin_name,
+                  Terminal5x7,
+                  GLCD_BLACK);
+    }
+    else
+    {
+        title_len = 9; //len of "(unnamed)"
+        glcd_text(display, ((DISPLAY_WIDTH / 2) - (3 * title_len) + 7), 1, "(unnamed)", Terminal5x7, GLCD_BLACK);
+    }
 
+    icon_plugin(display, ((DISPLAY_WIDTH / 2) - (3*title_len) + 7) - 11, 1);
+    //invert the top bar
+    glcd_rect_invert(display, 0, 0, DISPLAY_WIDTH, 9);
+
+    //not printing the outlines, but only the boxes
+    print_menu_boxes();
+
+    screen_encoder_container_paged(0, model->controls_count / ENCODERS_COUNT);
     for (int i = 0; i < ENCODERS_COUNT; i++)
     {
+        const control_t* control = model->controls ? model->controls[i] : NULL;
+        
         // checks the function assigned to foot and update the footer
-        if (g_controls[i])
+        if (control)
         {
-            screen_encoder(g_controls[i], i);
+            screen_encoder(control, i);
         }
         else
         {
@@ -1873,7 +1963,6 @@ void screen_plugin_edit(control_t **g_controls)
     }
 
     glcd_text(display, 18, DISPLAY_HEIGHT - 7, "PLUGIN", Terminal3x5, GLCD_BLACK);
-    glcd_text(display, 62, DISPLAY_HEIGHT - 7, "-", Terminal3x5, GLCD_BLACK);
-    glcd_text(display, 90, DISPLAY_HEIGHT - 7, "EXIT", Terminal3x5, GLCD_BLACK);
-
+    glcd_text(display, 62, DISPLAY_HEIGHT - 7, "<", Terminal3x5, GLCD_BLACK);
+    glcd_text(display, 96, DISPLAY_HEIGHT - 7, ">", Terminal3x5, GLCD_BLACK);
 }

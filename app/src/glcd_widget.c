@@ -1477,6 +1477,25 @@ void icon_pedalboard(glcd_t *display, uint8_t x, uint8_t y)
     glcd_rect(display, x, y+6, 9, 1, GLCD_BLACK);
 }
 
+void icon_plugin(glcd_t *display, uint8_t x, uint8_t y)
+{
+    //TODO: change icon, this is the same of the PB
+    // clears the icon area
+    glcd_rect_fill(display, x, y, 9, 7, GLCD_WHITE);
+
+    // draws the icon
+    
+    //outer bourders    
+    glcd_rect(display, x, y, 1, 7, GLCD_BLACK);
+    glcd_rect(display, x+8, y, 1, 7, GLCD_BLACK);
+
+    //vertical lines
+    glcd_rect(display, x, y, 9, 1, GLCD_BLACK);
+    glcd_rect(display, x, y+2, 9, 1, GLCD_BLACK);
+    glcd_rect(display, x, y+4, 9, 1, GLCD_BLACK);
+    glcd_rect(display, x, y+6, 9, 1, GLCD_BLACK);
+}
+
 void icon_overlay(glcd_t *display, uint8_t x, uint8_t y)
 {
     // clears the icon area

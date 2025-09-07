@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdarg.h>
 
 #include "FreeRTOS.h"
 #include "task.h"
@@ -20,6 +21,7 @@
 #include "screen.h"
 #include "ui_comm.h"
 #include "mode_builder.h"
+#include "loggin.h"
 
 /*
 ************************************************************************************************************************
@@ -65,12 +67,15 @@ enum UIStates {
 static enum UIStates uiState = DEFAULT;
 static bp_list_t *g_plugins; /* list of pedalboard plugins effects */
 static uint8_t g_plugins_loaded = 0;
-static uint8_t g_current_plugin, g_selected_plugin;
+static uint8_t g_current_plugin = 0;
+static uint8_t g_selected_plugin = 0;
 static control_t *g_controls[ENCODERS_COUNT];
 static list_clone_t g_list_clone[ENCODERS_COUNT];
 static int8_t g_current_overlay_actuator = -1;
 static bool g_list_click = 0;
 static menu_item_t pluginMenuItem;
+
+static plugin_edit_t plugin_edit = {"", NULL, NULL, 0, 0, 0}; // data for the plugin edit screen
 
 /*
 ************************************************************************************************************************
@@ -335,7 +340,9 @@ static void request_plugins(uint8_t dir)
     //clear the buffer
     ui_comm_webgui_clear_tx_buffer();
 
-    i = copy_command((char *)buffer, CMD_BUILDER_EFFECTS);
+    // send command plugin list
+    // response:  "r 1 4 0 4 "My Autopanner" "dynamic_1" "Distortion" "ojd_1"...
+    i = copy_command((char *)buffer, CMD_BUILDER_PLUGINS);
 
     uint8_t bitmask = 0;
     if (dir == 1)
@@ -382,6 +389,82 @@ static void request_plugins(uint8_t dir)
 }
 
 /*
+ * ask a list of loaded plugins in the current pedalboard
+ */
+static void request_plugin_controls(const char* uid, uint8_t dir)
+{
+    uint8_t i;
+    char buffer[40];
+    memset(buffer, 0, sizeof buffer);
+
+    // sets the response callback
+    // ui_comm_webgui_set_response_cb(parse_plugins_list, &pluginMenuItem);
+    //clear the buffer
+    ui_comm_webgui_clear_tx_buffer();
+
+    // send command control list
+    i = copy_command((char *)buffer, CMD_BUILDER_CONTROL_PAGE);
+
+    buffer[i++] = '"';
+    strcpy(&buffer[i], uid);
+    i += strlen(uid);
+    buffer[i++] = '"';
+    buffer[i++] = ' ';  
+
+    uint8_t bitmask = 0;
+    if (dir == 1)
+        bitmask |= FLAG_PAGINATION_PAGE_UP;
+    else if (dir == 2)
+        bitmask |= FLAG_PAGINATION_INITIAL_REQ;
+
+    // insert the direction on buffer
+    i += int_to_str(bitmask, &buffer[i], sizeof(buffer) - i, 0);
+
+    // inserts one space
+    buffer[i++] = ' ';
+
+    // insert the current hover on buffer
+    if ((dir == PAGE_DIR_INIT)) 
+    {
+        i += int_to_str(0, &buffer[i], sizeof(buffer) - i, 0);
+    }
+    else
+    {
+        i += int_to_str(plugin_edit.current_page, &buffer[i], sizeof(buffer) - i, 0);
+    }
+
+    buffer[i++] = 0;
+
+    int32_t prev_selected = plugin_edit.current_page;
+
+    // sends the data to GUI
+    ui_comm_webgui_send(buffer, i);
+
+    // waits the pedalboards list be received
+    ui_comm_webgui_wait_response();
+
+    plugin_edit.current_page = prev_selected;
+}
+
+/*
+ * select a plugin from the list
+ */
+static void list_select_plugin(uint8_t index)
+{
+    log_info("Selecting plugin %d", index);
+    if (!g_plugins) return;
+
+    g_selected_plugin = index;
+    log_info("Selected plugin %d: %p %d", index, g_plugins->names, g_plugins->selected_count);
+    plugin_edit.plugin_name = g_plugins->names[index];
+    log_info("Selected plugin %s", plugin_edit.plugin_name);
+    plugin_edit.plugin_uid = g_plugins->uids[index];
+    log_info("Selected plugin uri %s", plugin_edit.plugin_uid);
+    request_plugin_controls(plugin_edit.plugin_uid, PAGE_DIR_INIT);
+}
+
+
+/*
 ************************************************************************************************************************
 *           GLOBAL FUNCTIONS
 ************************************************************************************************************************
@@ -400,6 +483,7 @@ void BM_clear(void)
  */
 void BM_set_state(void)
 {
+    log_info("Entering Builder Mode");
     uiState = PLUGIN_SELECT;
     g_current_plugin = 0;
     g_selected_plugin = 0;
@@ -419,8 +503,8 @@ void BM_encoder_click(uint8_t encoder)
                 // if there is some plugin
                 if (pluginMenuItem.data.list_count > 0) {
 
-                    g_selected_plugin = g_current_plugin;
                     uiState = PLUGIN_EDIT;
+                    list_select_plugin(g_current_plugin);
                     BM_print_screen();
                 }
             }
@@ -463,6 +547,7 @@ void BM_down(uint8_t encoder)
             switch (uiState)
             {
                 case PLUGIN_SELECT:
+                    log_info("Down Pressed %p %d %d",pluginMenuItem.data, g_current_plugin, pluginMenuItem.data.list_count);
                     if (g_current_plugin >= pluginMenuItem.data.list_count - 1)
                         g_current_plugin = 0;
                     else
@@ -489,27 +574,37 @@ void BM_button_pressed(uint8_t button)
     {
         //enter menu
         case 0:
-            if (uiState == PLUGIN_EDIT)
+            if (uiState == PLUGIN_EDIT) 
             {
                 uiState = PLUGIN_SELECT;
                 request_plugins(PAGE_DIR_INIT);
             }
             else
             {
-                uiState = PLUGIN_EDIT;
+                if (pluginMenuItem.data.list_count > 0) {
+                    uiState = PLUGIN_EDIT;
+                    list_select_plugin(g_current_plugin);
+                }
             }
         break;
 
         case 1:
+            if (uiState == PLUGIN_EDIT) {
+                if (plugin_edit.current_page >= plugin_edit.page_count - 1)
+                    plugin_edit.current_page = 0;
+                else
+                    plugin_edit.current_page++;
+            }
         break;
         
         case 2:
-            if (uiState == PLUGIN_SELECT) 
+           if (uiState == PLUGIN_EDIT) 
             {
-                if (pluginMenuItem.data.list_count > 0) {
-                    uiState = PLUGIN_EDIT;
-                    g_selected_plugin = g_current_plugin;
-                }
+                /* next page */
+                if (plugin_edit.current_page >= plugin_edit.page_count - 1)
+                    plugin_edit.current_page = 0;
+                else
+                    plugin_edit.current_page++;
             }
             else
             {
@@ -590,7 +685,7 @@ void BM_print_screen(void)
             screen_plugins_list(&pluginMenuItem);
         break;
         case PLUGIN_EDIT:
-            screen_plugin_edit(g_controls);
+            screen_plugin_edit(&plugin_edit);
             break;
         case DEFAULT:
         default:

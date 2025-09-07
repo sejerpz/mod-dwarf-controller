@@ -42,6 +42,21 @@
 ************************************************************************************************************************
 */
 
+typedef struct {
+     /* current select plugin name */
+    const char* plugin_name; 
+	/* current selected plugin uri */
+	const char* plugin_uid;
+     /* controls of the plugin */
+    control_t **controls;
+    /* number of controls */
+    uint8_t controls_count; 
+    /* current page: controls are paginated 3 per page*/
+    uint8_t current_page;
+    /* number of pages: g_controls_count / 3 */
+    uint8_t page_count;    // current page of the plugin controls (dwarf: 3 controls per page)
+} plugin_edit_t;
+
 /*
 ************************************************************************************************************************
 *           GLOBAL VARIABLES
@@ -67,7 +82,7 @@ void screen_force_update(void);
 void screen_set_hide_non_assigned_actuators(uint8_t hide);
 void screen_set_control_mode_header(uint8_t toggle);
 void screen_group_foots(uint8_t toggle);
-void screen_encoder(control_t *control, uint8_t encoder);
+void screen_encoder(const control_t *control, uint8_t encoder);
 void screen_encoder_container(uint8_t current_encoder_page);
 void screen_page_index(uint8_t current, uint8_t available);
 void screen_tittle(int8_t pb_ss);
@@ -93,7 +108,7 @@ void screen_update_tuner_ref_freq(int8_t ref_freq);
 void print_tripple_menu_items(menu_item_t *item_child, uint8_t knob, uint8_t tool_mode);
 void screen_text_box(uint8_t x, uint8_t y, const char *text);
 void screen_plugins_list(menu_item_t *item);
-void screen_plugin_edit(control_t **g_controls);
+void screen_plugin_edit(plugin_edit_t *model);
 
 /*
 ************************************************************************************************************************
