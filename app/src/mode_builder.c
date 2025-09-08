@@ -388,6 +388,20 @@ static void request_plugins(uint8_t dir)
     }
 }
 
+static void parse_plugins_control(void *data, menu_item_t *item)
+{
+    // the call returns the number of pages
+    char **list = data;
+
+    //error, dont parse when mod-ui gives error
+    if (atoi(list[1]) == -1)
+        return;
+
+    uint32_t count = strarr_length(&list[2]);
+
+    plugin_edit.controls_count = count;
+}
+
 /*
  * ask a list of loaded plugins in the current pedalboard
  */
@@ -398,17 +412,17 @@ static void request_plugin_controls(const char* uid, uint8_t dir)
     memset(buffer, 0, sizeof buffer);
 
     // sets the response callback
-    // ui_comm_webgui_set_response_cb(parse_plugins_list, &pluginMenuItem);
+    ui_comm_webgui_set_response_cb(parse_plugins_control, NULL);
     //clear the buffer
     ui_comm_webgui_clear_tx_buffer();
 
     // send command control list
     i = copy_command((char *)buffer, CMD_BUILDER_CONTROL_PAGE);
 
-    buffer[i++] = '"';
+    //buffer[i++] = '"';
     strcpy(&buffer[i], uid);
     i += strlen(uid);
-    buffer[i++] = '"';
+    //buffer[i++] = '"';
     buffer[i++] = ' ';  
 
     uint8_t bitmask = 0;
@@ -461,6 +475,345 @@ static void list_select_plugin(uint8_t index)
     plugin_edit.plugin_uid = g_plugins->uids[index];
     log_info("Selected plugin uri %s", plugin_edit.plugin_uid);
     request_plugin_controls(plugin_edit.plugin_uid, PAGE_DIR_INIT);
+}
+
+static void send_control_set(control_t *control)
+{
+    char buffer[128];
+    uint8_t i;
+
+    i = copy_command(buffer, CMD_BUILDER_CONTROL_SET);
+
+    // insert the hw_id on buffer
+    i += int_to_str(control->hw_id, &buffer[i], sizeof(buffer) - i, 0);
+    buffer[i++] = ' ';
+
+    // insert the value on buffer
+    i += float_to_str(control->value, &buffer[i], sizeof(buffer) - i, 3);
+    buffer[i] = 0;
+
+    // sends the data to GUI
+    ui_comm_webgui_send(buffer, i);
+
+    //wait for a response from mod-ui
+    ui_comm_webgui_wait_response();
+}
+
+
+static void control_set(uint8_t id, control_t *control)
+{
+    log_info("control set %f", control->value);
+    (void) id;
+    uint32_t now, delta;
+
+    if ((control->properties & (FLAG_CONTROL_REVERSE | FLAG_CONTROL_ENUMERATION | FLAG_CONTROL_SCALE_POINTS)) && !(control->properties & FLAG_CONTROL_MOMENTARY))
+    {
+        //encoder (pagination is done in the increment / decrement functions)
+        if (control->hw_id < ENCODERS_COUNT)
+        {
+            // update the screen
+            screen_encoder(control, control->hw_id);
+
+            //display overlay
+            BM_print_control_overlay(control, ENCODER_LIST_TIMEOUT);
+        }
+    }
+    else if (control->properties & FLAG_CONTROL_TRIGGER)
+    {
+        if (control->hw_id < ENCODERS_COUNT)
+        {
+            if (g_current_overlay_actuator != -1)
+            {
+                hardware_force_overlay_off(0);
+                BM_print_screen();
+            }
+
+            // update the screen
+            screen_encoder(control, control->hw_id);
+        }
+    }
+    else if (control->properties & FLAG_CONTROL_MOMENTARY)
+    {
+        //TODO, BYPASS AND TOGGLES SHOULD BE HANDLED THE SAME
+        if (control->properties & FLAG_CONTROL_BYPASS) {
+            if (control->properties & FLAG_CONTROL_REVERSE)
+                control->value = control->scroll_dir;
+            else
+                control->value = 1 - control->scroll_dir;
+        }
+        else {
+            if (control->properties & FLAG_CONTROL_REVERSE)
+                control->value = 1 - control->scroll_dir;
+            else
+                control->value = control->scroll_dir;
+        }
+
+        // to update the footer and screen
+        //foot_control_add(control);
+    }
+    else if (control->properties & (FLAG_CONTROL_TOGGLED | FLAG_CONTROL_BYPASS))
+    {
+        if (control->hw_id < ENCODERS_COUNT)
+        {
+            if (g_current_overlay_actuator != -1)
+            {
+                hardware_force_overlay_off(0);
+                BM_print_screen();
+            }
+
+            // update the screen
+            screen_encoder(control, control->hw_id);
+        }
+    }
+    else
+    {
+        if (control->hw_id < ENCODERS_COUNT)
+        {
+            if (g_current_overlay_actuator != -1)
+            {
+                hardware_force_overlay_off(0);
+                BM_print_screen();
+            }
+
+            // update the screen
+            screen_encoder(control, control->hw_id);
+        }
+    }
+
+    if ((ENCODERS_COUNT <= control->hw_id) && (!control->lock_overlays))
+        BM_print_control_overlay(control, FOOT_CONTROLS_TIMEOUT);
+
+    if (g_list_click && (control->properties & (FLAG_CONTROL_ENUMERATION | FLAG_CONTROL_SCALE_POINTS | FLAG_CONTROL_REVERSE)) 
+        && (control->hw_id < ENCODERS_COUNT))
+        return;
+
+    log_info("sending control set %f", control->value);
+    send_control_set(control);
+}
+
+static void BM_inc_control(uint8_t encoder)
+{
+    control_t *control = g_controls[encoder];
+
+    //no control
+    if (!control) return;
+
+    //if we already have an overlay, reprint the full screen first
+    if ((hardware_get_overlay_counter() != 0) && (hardware_get_overlay_type() == OVERLAY_ATTENTION))
+        hardware_force_overlay_off(0);
+
+    if (control->properties & (FLAG_CONTROL_ENUMERATION | FLAG_CONTROL_SCALE_POINTS | FLAG_CONTROL_REVERSE)) {
+        //prepare display overlay
+        BM_print_control_overlay(control, ENCODER_LIST_TIMEOUT);
+
+        if (control->scale_points_flag & FLAG_SCALEPOINT_PAGINATED) {
+            // increments the step
+            if (control->step < (control->scale_points_count - 3)) {
+                if (control->scale_point_index >= control->steps)
+                    return;
+
+                control->step++;
+                control->scale_point_index++;
+            }
+            //we are at the end of our list ask for more data
+            else {
+                if ((control->scale_point_index >= control->steps - 2) ) {
+
+                    if (control->scale_point_index >= control->steps)
+                        return;
+
+                    control->step++;
+                    control->scale_point_index++;
+
+                    if (!g_list_click) {
+                        // converts the step to absolute value
+                        step_to_value(control);
+
+                        //make sure to save this value, in case the user switches mode
+                        clone_list_encoders(control);
+                    }
+
+                    // applies the control value
+                    control_set(encoder, control);
+                }
+                else if (control->scale_point_index < control->steps - 1) {
+                    //request new data, a new control we be assigned after
+                    //request_control_page(control, 1);
+                }
+
+                //since a new control is assigned we can return
+                return;
+            }       
+        }
+        else  {
+            // increments the step
+            if ((control->step < (control->steps)) && (control->step < (control->scale_points_count))) {
+                control->scale_point_index++;
+                control->step++;
+            }
+            else
+                return; 
+        }
+    }
+    else if (control->properties & FLAG_CONTROL_TRIGGER) {
+        control->value = control->maximum;
+    }
+    else if (control->properties & FLAG_CONTROL_TOGGLED) {
+        if (float_is_not_zero(control->value))
+            return;
+        else 
+            control->value = 1;
+    }
+    else if (control->properties & FLAG_CONTROL_BYPASS) {
+        if (float_is_zero(control->value))
+            return;
+        else 
+            control->value = 0;
+    }
+    else {
+        // increments the step
+        if (control->step < (control->steps - 1)) {
+            if (g_encoders_pressed[encoder])
+                control->step+=10;
+            else
+                control->step++;
+        
+            if (control->step > (control->steps - 1))
+                control->step = (control->steps - 1);
+        }
+        else
+            return;
+    }
+
+    if ((!g_list_click) || !(control->properties & (FLAG_CONTROL_ENUMERATION | FLAG_CONTROL_SCALE_POINTS | FLAG_CONTROL_REVERSE)) ) {
+        // converts the step to absolute value
+        step_to_value(control);
+    }
+
+    if (control->properties & (FLAG_CONTROL_ENUMERATION | FLAG_CONTROL_SCALE_POINTS | FLAG_CONTROL_REVERSE)) {
+        //make sure to save this value, in case the user switches mode
+        clone_list_encoders(control);
+    }
+
+    // applies the control value
+    control_set(encoder, control);
+}
+
+static void BM_dec_control(uint8_t encoder)
+{
+    control_t *control = g_controls[encoder];
+    log_info("dec encoder %p", control);
+
+    //no control, return
+    if (!control) return;
+
+    int i = 0;
+    log_info("control dec %d %p",i++, encoder);
+
+    //if we already have an overlay, reprint the full screen first
+    if ((hardware_get_overlay_counter() != 0) && (hardware_get_overlay_type() == OVERLAY_ATTENTION))
+        hardware_force_overlay_off(0);
+    log_info("control dec %d %p",i++, encoder);
+    
+    if  (control->properties & (FLAG_CONTROL_ENUMERATION | FLAG_CONTROL_SCALE_POINTS | FLAG_CONTROL_REVERSE))  {
+        //prepare display overlay
+        log_info("control dec enum %d %p",i++, encoder);
+        BM_print_control_overlay(control, ENCODER_LIST_TIMEOUT);
+
+        if (control->scale_points_flag & FLAG_SCALEPOINT_PAGINATED) {
+            // decrements the step
+            if (control->step > 2) {
+                control->step--;
+                control->scale_point_index--;
+            }
+            //we are at the end of our list ask for more data
+            else {
+                if ((control->scale_point_index <= 2) && (control->scale_point_index > 0)) {
+                    control->step--;
+                    control->scale_point_index--;
+
+                    if (!g_list_click) {
+                        // converts the step to absolute value
+                        step_to_value(control);
+
+                        //make sure to save this value, in case the user switches mode
+                        clone_list_encoders(control);
+                    }
+
+                    // applies the control value
+                    control_set(encoder, control);
+                }
+                else if (control->scale_point_index > 0) {
+                    //request new data, a new control we be assigned after
+                    //request_control_page(control, 0);
+                }
+
+                //since a new control is assigned we can return
+                return;
+            }
+        }
+        else {
+            // decrements the step
+            if (control->step > 0) {
+                control->scale_point_index--;
+                control->step--;
+            }
+            else
+            {
+                log_info("control dec exit1 %d %p",i++, encoder);
+
+                return;
+            }
+        }
+    }
+    else if (control->properties & FLAG_CONTROL_TRIGGER) {
+        control->value = control->maximum;
+    }
+    else if (control->properties & FLAG_CONTROL_TOGGLED) {
+        if (float_is_zero(control->value))
+            return;
+        else 
+            control->value = 0;
+    }
+    else if (control->properties & FLAG_CONTROL_BYPASS) {
+        if (float_is_not_zero(control->value))
+            return;
+        else 
+            control->value = 1;
+    }
+    else {
+        log_info("control step %d", control->step);
+        // decrements the step
+        if (control->step > 0)
+        {
+            if (g_encoders_pressed[encoder])
+                control->step-=10;
+            else
+                control->step--;
+
+            if (control->step < 0)
+                control->step = 0;
+        }
+        else
+            return;
+    }
+
+    log_info("control dec %d %p",i++, encoder);
+
+    if ((!g_list_click) || !(control->properties & (FLAG_CONTROL_ENUMERATION | FLAG_CONTROL_SCALE_POINTS | FLAG_CONTROL_REVERSE)) ) {
+        // converts the step to absolute value
+        step_to_value(control);
+    }
+
+    if (control->properties & (FLAG_CONTROL_ENUMERATION | FLAG_CONTROL_SCALE_POINTS | FLAG_CONTROL_REVERSE)) {
+        //make sure to save this value, in case the user switches mode
+        clone_list_encoders(control);
+    }
+
+    log_info("control dec %d %p",i++, encoder);
+
+    // applies the control value
+    control_set(encoder, control);
 }
 
 
@@ -517,51 +870,33 @@ void BM_encoder_click(uint8_t encoder)
 
 void BM_up(uint8_t encoder)
 {
-    switch(encoder) {
-        case 0:
-            switch (uiState)
-            {
-                case PLUGIN_SELECT:
-                    if (g_current_plugin > 0)
-                        g_current_plugin--;
-                    else
-                        g_current_plugin = pluginMenuItem.data.list_count - 1;
+    log_info("encoder %d up", encoder);
+    if (uiState == PLUGIN_SELECT && encoder == 0) {
+        if (g_current_plugin > 0)
+            g_current_plugin--;
+        else
+            g_current_plugin = pluginMenuItem.data.list_count - 1;
 
-                    pluginMenuItem.data.hover = g_current_plugin;
-                    BM_print_screen();
-
-                break;
-                case DEFAULT:
-                case PLUGIN_EDIT:
-                default:
-                    break;
-            }
-        break;
+        pluginMenuItem.data.hover = g_current_plugin;
+        BM_print_screen();
+    } else if (uiState == PLUGIN_EDIT) {
+        BM_inc_control(encoder);
     }
 }
 
 void BM_down(uint8_t encoder)
 {
-    switch(encoder) {
-        case 0:
-            switch (uiState)
-            {
-                case PLUGIN_SELECT:
-                    log_info("Down Pressed %p %d %d",pluginMenuItem.data, g_current_plugin, pluginMenuItem.data.list_count);
-                    if (g_current_plugin >= pluginMenuItem.data.list_count - 1)
-                        g_current_plugin = 0;
-                    else
-                        g_current_plugin++;
+    log_info("encoder %d down", encoder);
+    if (uiState == PLUGIN_SELECT && encoder == 0) {
+        if (g_current_plugin >= pluginMenuItem.data.list_count - 1)
+            g_current_plugin = 0;
+        else
+            g_current_plugin++;
 
-                    pluginMenuItem.data.hover = g_current_plugin;
-                    BM_print_screen();
-                break;
-                case DEFAULT:
-                case PLUGIN_EDIT:
-                default:
-                    break;
-            }
-        break;
+        pluginMenuItem.data.hover = g_current_plugin;
+        BM_print_screen();
+    } else if (uiState == PLUGIN_EDIT) {
+        BM_dec_control(encoder);
     }
 }
 /*

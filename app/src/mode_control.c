@@ -107,29 +107,6 @@ static void foot_control_rm(uint8_t hw_id);
 ************************************************************************************************************************
 */
 
-// calculates the control value using the step
-static void step_to_value(control_t *control)
-{
-    // about the calculation: http://lv2plug.in/ns/ext/port-props/#rangeSteps
-
-    float p_step = ((float) control->step) / ((float) (control->steps - 1));
-    if (control->properties & (FLAG_CONTROL_REVERSE | FLAG_CONTROL_ENUMERATION | FLAG_CONTROL_SCALE_POINTS))
-    {
-        control->value = control->scale_points[control->step]->value;
-    }
-    else if (control->properties & FLAG_CONTROL_LOGARITHMIC)
-    {
-        control->value = control->minimum * powf(control->maximum / control->minimum, p_step);
-    }
-    else if (!(control->properties & (FLAG_CONTROL_TRIGGER | FLAG_CONTROL_TOGGLED | FLAG_CONTROL_BYPASS)))
-    {
-        control->value = (p_step * (control->maximum - control->minimum)) + control->minimum;
-    }
-
-    if (control->value > control->maximum) control->value = control->maximum;
-    if (control->value < control->minimum) control->value = control->minimum;
-}
-
 static void reset_list_encoders(void)
 {
     uint8_t q, i;
