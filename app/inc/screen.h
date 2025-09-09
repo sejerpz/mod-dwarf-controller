@@ -109,6 +109,7 @@ void print_tripple_menu_items(menu_item_t *item_child, uint8_t knob, uint8_t too
 void screen_text_box(uint8_t x, uint8_t y, const char *text);
 void screen_plugins_list(menu_item_t *item);
 void screen_plugin_edit(plugin_edit_t *model);
+void screen_plugin_edit_page_info(plugin_edit_t *model);
 
 /*
 ************************************************************************************************************************

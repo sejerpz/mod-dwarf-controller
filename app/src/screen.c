@@ -688,7 +688,7 @@ static void screen_encoder_containers(uint8_t mode, uint8_t current_page, uint8_
       
         glcd_rect(display, 31, 43, 66, 9, GLCD_BLACK);
         // current page indicator
-        glcd_text(display, (DISPLAY_WIDTH / 2) - (3 * len) + 9, 45, buffer, Terminal3x5, GLCD_BLACK);
+        glcd_text(display, (DISPLAY_WIDTH / 2) - (3 * len) + 7, 45, buffer, Terminal3x5, GLCD_BLACK);
     }
     else
     {
@@ -1946,7 +1946,7 @@ void screen_plugin_edit(plugin_edit_t *model)
     //not printing the outlines, but only the boxes
     print_menu_boxes();
 
-    screen_encoder_container_paged(0, model->controls_count / ENCODERS_COUNT);
+    screen_encoder_container_paged(model->current_page, model->page_count);
     for (int i = 0; i < ENCODERS_COUNT; i++)
     {
         const control_t* control = model->controls ? model->controls[i] : NULL;
@@ -1962,7 +1962,13 @@ void screen_plugin_edit(plugin_edit_t *model)
         }
     }
 
-    glcd_text(display, 18, DISPLAY_HEIGHT - 7, "PLUGIN", Terminal3x5, GLCD_BLACK);
-    glcd_text(display, 62, DISPLAY_HEIGHT - 7, "<", Terminal3x5, GLCD_BLACK);
-    glcd_text(display, 96, DISPLAY_HEIGHT - 7, ">", Terminal3x5, GLCD_BLACK);
+    glcd_text(display, 16, DISPLAY_HEIGHT - 7, "PLUGINS", Terminal3x5, GLCD_BLACK);
+    if (model->current_page > 0)
+    {
+        glcd_text(display, 62, DISPLAY_HEIGHT - 7, "<", Terminal3x5, GLCD_BLACK);
+    }
+    if (model->page_count > 1 && model->current_page < model->page_count - 1)
+    {
+        glcd_text(display, 96, DISPLAY_HEIGHT - 7, ">", Terminal3x5, GLCD_BLACK);
+    }
 }

@@ -342,7 +342,7 @@ static void request_plugins(uint8_t dir)
 
     // send command plugin list
     // response:  "r 1 4 0 4 "My Autopanner" "dynamic_1" "Distortion" "ojd_1"...
-    i = copy_command((char *)buffer, CMD_BUILDER_PLUGINS);
+    i = copy_command((char *)buffer, CMD_DWARF_BUILDER_PLUGINS);
 
     uint8_t bitmask = 0;
     if (dir == 1)
@@ -397,15 +397,16 @@ static void parse_plugins_control(void *data, menu_item_t *item)
     if (atoi(list[1]) == -1)
         return;
 
-    uint32_t count = strarr_length(&list[2]);
+    uint32_t controls_count = atoi(list[2]);
 
-    plugin_edit.controls_count = count;
+    plugin_edit.controls_count = controls_count;
+    plugin_edit.page_count = ceil((float)controls_count / ENCODERS_COUNT);
 }
 
 /*
  * ask a list of loaded plugins in the current pedalboard
  */
-static void request_plugin_controls(const char* uid, uint8_t dir)
+static void request_plugin_controls(const char* uid, uint8_t start_index, uint8_t count)
 {
     uint8_t i;
     char buffer[40];
@@ -417,7 +418,7 @@ static void request_plugin_controls(const char* uid, uint8_t dir)
     ui_comm_webgui_clear_tx_buffer();
 
     // send command control list
-    i = copy_command((char *)buffer, CMD_BUILDER_CONTROL_PAGE);
+    i = copy_command((char *)buffer, CMD_DWARF_BUILDER_CONTROLS);
 
     //buffer[i++] = '"';
     strcpy(&buffer[i], uid);
@@ -425,39 +426,38 @@ static void request_plugin_controls(const char* uid, uint8_t dir)
     //buffer[i++] = '"';
     buffer[i++] = ' ';  
 
-    uint8_t bitmask = 0;
-    if (dir == 1)
-        bitmask |= FLAG_PAGINATION_PAGE_UP;
-    else if (dir == 2)
-        bitmask |= FLAG_PAGINATION_INITIAL_REQ;
-
-    // insert the direction on buffer
-    i += int_to_str(bitmask, &buffer[i], sizeof(buffer) - i, 0);
+    // insert start index on buffer
+    i += int_to_str(start_index, &buffer[i], sizeof(buffer) - i, 0);
 
     // inserts one space
     buffer[i++] = ' ';
 
-    // insert the current hover on buffer
-    if ((dir == PAGE_DIR_INIT)) 
-    {
-        i += int_to_str(0, &buffer[i], sizeof(buffer) - i, 0);
-    }
-    else
-    {
-        i += int_to_str(plugin_edit.current_page, &buffer[i], sizeof(buffer) - i, 0);
-    }
+    // insert count
+    i += int_to_str(count, &buffer[i], sizeof(buffer) - i, 0);
 
     buffer[i++] = 0;
-
-    int32_t prev_selected = plugin_edit.current_page;
 
     // sends the data to GUI
     ui_comm_webgui_send(buffer, i);
 
     // waits the pedalboards list be received
     ui_comm_webgui_wait_response();
+}
 
-    plugin_edit.current_page = prev_selected;
+/* request the current page controls */
+static void request_current_page_controls(void)
+{
+    if (!plugin_edit.plugin_uid) return;
+
+    uint8_t start_index = plugin_edit.current_page * ENCODERS_COUNT;
+    uint8_t count = (plugin_edit.controls_count - start_index) > ENCODERS_COUNT ? ENCODERS_COUNT : (plugin_edit.controls_count - start_index);
+
+    log_info("Requesting plugin controls for page %d / %d: %d # %d", plugin_edit.current_page, plugin_edit.page_count, start_index, count);
+    // clear current controls
+    for(uint8_t i = 0; i < ENCODERS_COUNT; i++) {
+        encoder_control_rm(i);
+    }
+    request_plugin_controls(plugin_edit.plugin_uid, start_index, count);
 }
 
 /*
@@ -465,16 +465,19 @@ static void request_plugin_controls(const char* uid, uint8_t dir)
  */
 static void list_select_plugin(uint8_t index)
 {
-    log_info("Selecting plugin %d", index);
     if (!g_plugins) return;
 
     g_selected_plugin = index;
-    log_info("Selected plugin %d: %p %d", index, g_plugins->names, g_plugins->selected_count);
     plugin_edit.plugin_name = g_plugins->names[index];
-    log_info("Selected plugin %s", plugin_edit.plugin_name);
     plugin_edit.plugin_uid = g_plugins->uids[index];
-    log_info("Selected plugin uri %s", plugin_edit.plugin_uid);
-    request_plugin_controls(plugin_edit.plugin_uid, PAGE_DIR_INIT);
+    plugin_edit.current_page = 0;
+    plugin_edit.page_count = 0;
+    plugin_edit.controls_count = 0;
+    log_info("Selected plugin %s (uid %s)", plugin_edit.plugin_name, plugin_edit.plugin_uid);
+    // request plugin controls count
+    request_plugin_controls(plugin_edit.plugin_uid, 0, 0);
+    if (plugin_edit.controls_count > 0)
+        request_plugin_controls(plugin_edit.plugin_uid, 0, plugin_edit.controls_count > ENCODERS_COUNT ? ENCODERS_COUNT : plugin_edit.controls_count);
 }
 
 static void send_control_set(control_t *control)
@@ -482,7 +485,7 @@ static void send_control_set(control_t *control)
     char buffer[128];
     uint8_t i;
 
-    i = copy_command(buffer, CMD_BUILDER_CONTROL_SET);
+    i = copy_command(buffer, CMD_DWARF_BUILDER_CONTROL_SET);
 
     // insert the hw_id on buffer
     i += int_to_str(control->hw_id, &buffer[i], sizeof(buffer) - i, 0);
@@ -502,9 +505,8 @@ static void send_control_set(control_t *control)
 
 static void control_set(uint8_t id, control_t *control)
 {
-    log_info("control set %f", control->value);
+    //log_info("control set %f", control->value);
     (void) id;
-    uint32_t now, delta;
 
     if ((control->properties & (FLAG_CONTROL_REVERSE | FLAG_CONTROL_ENUMERATION | FLAG_CONTROL_SCALE_POINTS)) && !(control->properties & FLAG_CONTROL_MOMENTARY))
     {
@@ -587,7 +589,7 @@ static void control_set(uint8_t id, control_t *control)
         && (control->hw_id < ENCODERS_COUNT))
         return;
 
-    log_info("sending control set %f", control->value);
+//    log_info("sending control set %f", control->value);
     send_control_set(control);
 }
 
@@ -870,7 +872,6 @@ void BM_encoder_click(uint8_t encoder)
 
 void BM_up(uint8_t encoder)
 {
-    log_info("encoder %d up", encoder);
     if (uiState == PLUGIN_SELECT && encoder == 0) {
         if (g_current_plugin > 0)
             g_current_plugin--;
@@ -880,13 +881,12 @@ void BM_up(uint8_t encoder)
         pluginMenuItem.data.hover = g_current_plugin;
         BM_print_screen();
     } else if (uiState == PLUGIN_EDIT) {
-        BM_inc_control(encoder);
+        BM_dec_control(encoder);
     }
 }
 
 void BM_down(uint8_t encoder)
 {
-    log_info("encoder %d down", encoder);
     if (uiState == PLUGIN_SELECT && encoder == 0) {
         if (g_current_plugin >= pluginMenuItem.data.list_count - 1)
             g_current_plugin = 0;
@@ -896,7 +896,7 @@ void BM_down(uint8_t encoder)
         pluginMenuItem.data.hover = g_current_plugin;
         BM_print_screen();
     } else if (uiState == PLUGIN_EDIT) {
-        BM_dec_control(encoder);
+        BM_inc_control(encoder);
     }
 }
 /*
@@ -925,10 +925,10 @@ void BM_button_pressed(uint8_t button)
 
         case 1:
             if (uiState == PLUGIN_EDIT) {
-                if (plugin_edit.current_page >= plugin_edit.page_count - 1)
-                    plugin_edit.current_page = 0;
-                else
-                    plugin_edit.current_page++;
+                if (plugin_edit.current_page > 0)
+                    plugin_edit.current_page--;
+
+                request_current_page_controls();
             }
         break;
         
@@ -936,10 +936,10 @@ void BM_button_pressed(uint8_t button)
            if (uiState == PLUGIN_EDIT) 
             {
                 /* next page */
-                if (plugin_edit.current_page >= plugin_edit.page_count - 1)
-                    plugin_edit.current_page = 0;
-                else
+                if (plugin_edit.current_page < plugin_edit.page_count - 1)
                     plugin_edit.current_page++;
+
+                request_current_page_controls();
             }
             else
             {

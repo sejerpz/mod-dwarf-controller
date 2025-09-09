@@ -1489,11 +1489,14 @@ void icon_plugin(glcd_t *display, uint8_t x, uint8_t y)
     glcd_rect(display, x, y, 1, 7, GLCD_BLACK);
     glcd_rect(display, x+8, y, 1, 7, GLCD_BLACK);
 
-    //vertical lines
+    //horizontal lines
     glcd_rect(display, x, y, 9, 1, GLCD_BLACK);
-    glcd_rect(display, x, y+2, 9, 1, GLCD_BLACK);
-    glcd_rect(display, x, y+4, 9, 1, GLCD_BLACK);
+    // glcd_rect(display, x, y+2, 9, 1, GLCD_BLACK);
+    // glcd_rect(display, x, y+4, 9, 1, GLCD_BLACK);
     glcd_rect(display, x, y+6, 9, 1, GLCD_BLACK);
+    glcd_rect(display, x+2, y+1, 2, 2, GLCD_BLACK);
+    glcd_rect(display, x+5, y+1, 2, 2, GLCD_BLACK);
+    glcd_rect(display, x+3, y+4, 3, 2, GLCD_BLACK);
 }
 
 void icon_overlay(glcd_t *display, uint8_t x, uint8_t y)
