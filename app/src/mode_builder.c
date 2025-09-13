@@ -69,13 +69,11 @@ static bp_list_t *g_plugins; /* list of pedalboard plugins effects */
 static uint8_t g_plugins_loaded = 0;
 static uint8_t g_current_plugin = 0;
 static uint8_t g_selected_plugin = 0;
-static control_t *g_controls[ENCODERS_COUNT];
 static list_clone_t g_list_clone[ENCODERS_COUNT];
-static int8_t g_current_overlay_actuator = -1;
 static bool g_list_click = 0;
 static menu_item_t pluginMenuItem;
 
-static plugin_edit_t plugin_edit = {"", NULL, NULL, 0, 0, 0}; // data for the plugin edit screen
+static plugin_edit_t plugin_edit; // data for the plugin edit screen
 
 /*
 ************************************************************************************************************************
@@ -108,11 +106,10 @@ static void encoder_control_add(control_t *control)
     if (control->hw_id >= ENCODERS_COUNT) return;
 
     // checks if is already a control assigned in this display and remove it
-    if (g_controls[control->hw_id])
-        data_free_control(g_controls[control->hw_id]);
+    control_t *prev_control = plugin_edit.controls[control->hw_id];
 
     // assign the new control
-    g_controls[control->hw_id] = control;
+    plugin_edit.controls[control->hw_id] = control;
 
     if (control->properties & (FLAG_CONTROL_REVERSE | FLAG_CONTROL_ENUMERATION | FLAG_CONTROL_SCALE_POINTS))
     {
@@ -161,17 +158,23 @@ static void encoder_control_add(control_t *control)
             (control->value - control->minimum) / ((control->maximum - control->minimum) / control->steps);
     }
 
+    // cleanup previous
+    if (prev_control)
+    {
+        data_free_control(prev_control);
+    }
+
     if (naveg_get_current_mode() == MODE_BUILDER)
     {
         //if screen overlay active, update that
-        if ((hardware_get_overlay_counter() || !control->scroll_dir) && (g_current_overlay_actuator == control->hw_id))
+        if ((hardware_get_overlay_counter() || !control->scroll_dir) && (plugin_edit.current_overlay_control_index == control->hw_id))
         {
             BM_print_control_overlay(control, ENCODER_LIST_TIMEOUT);
             return;
         }
 
         // update the control screen
-        if (g_current_overlay_actuator == -1)
+        if (plugin_edit.current_overlay_control_index == -1)
             screen_encoder(control, control->hw_id);
     }
 }
@@ -181,19 +184,20 @@ static void encoder_control_rm(uint8_t hw_id)
 {
     if (hw_id > ENCODERS_COUNT) return;
 
-    if ((!g_controls[hw_id]) && (naveg_get_current_mode() == MODE_BUILDER))
-    {
-        if (hardware_get_overlay_counter() == 0)
-            screen_encoder(NULL, hw_id);
-        return;
-    }
+    // if ((!plugin_edit.controls[hw_id]) && (naveg_get_current_mode() == MODE_BUILDER))
+    // {
+    //     if (hardware_get_overlay_counter() == 0)
+    //         screen_encoder(NULL, hw_id);
+    //     return;
+    // }
 
-    control_t *control = g_controls[hw_id];
+
+    control_t *control = plugin_edit.controls[hw_id];
 
     if (control)
     {
+        plugin_edit.controls[hw_id] = NULL;
         data_free_control(control);
-        g_controls[hw_id] = NULL;
         if ((naveg_get_current_mode() == MODE_BUILDER) && (hardware_get_overlay_counter() == 0))
             screen_encoder(NULL, hw_id);
     }
@@ -203,7 +207,7 @@ static void reset_list_encoders(void)
 {
     uint8_t q, i;
     for (q = 0; q < ENCODERS_COUNT; q++) {
-        control_t *control = g_controls[q];
+        control_t *control = plugin_edit.controls[q];
 
         //do we even have a control
         if (!control)
@@ -390,6 +394,7 @@ static void request_plugins(uint8_t dir)
 
 static void parse_plugins_control(void *data, menu_item_t *item)
 {
+    (void)item;
     // the call returns the number of pages
     char **list = data;
 
@@ -440,7 +445,7 @@ static void request_plugin_controls(const char* uid, uint8_t start_index, uint8_
     // sends the data to GUI
     ui_comm_webgui_send(buffer, i);
 
-    // waits the pedalboards list be received
+    // waits the controls list be received
     ui_comm_webgui_wait_response();
 }
 
@@ -452,7 +457,6 @@ static void request_current_page_controls(void)
     uint8_t start_index = plugin_edit.current_page * ENCODERS_COUNT;
     uint8_t count = (plugin_edit.controls_count - start_index) > ENCODERS_COUNT ? ENCODERS_COUNT : (plugin_edit.controls_count - start_index);
 
-    log_info("Requesting plugin controls for page %d / %d: %d # %d", plugin_edit.current_page, plugin_edit.page_count, start_index, count);
     // clear current controls
     for(uint8_t i = 0; i < ENCODERS_COUNT; i++) {
         encoder_control_rm(i);
@@ -473,7 +477,6 @@ static void list_select_plugin(uint8_t index)
     plugin_edit.current_page = 0;
     plugin_edit.page_count = 0;
     plugin_edit.controls_count = 0;
-    log_info("Selected plugin %s (uid %s)", plugin_edit.plugin_name, plugin_edit.plugin_uid);
     // request plugin controls count
     request_plugin_controls(plugin_edit.plugin_uid, 0, 0);
     if (plugin_edit.controls_count > 0)
@@ -505,7 +508,6 @@ static void send_control_set(control_t *control)
 
 static void control_set(uint8_t id, control_t *control)
 {
-    //log_info("control set %f", control->value);
     (void) id;
 
     if ((control->properties & (FLAG_CONTROL_REVERSE | FLAG_CONTROL_ENUMERATION | FLAG_CONTROL_SCALE_POINTS)) && !(control->properties & FLAG_CONTROL_MOMENTARY))
@@ -524,7 +526,7 @@ static void control_set(uint8_t id, control_t *control)
     {
         if (control->hw_id < ENCODERS_COUNT)
         {
-            if (g_current_overlay_actuator != -1)
+            if (plugin_edit.current_overlay_control_index != -1)
             {
                 hardware_force_overlay_off(0);
                 BM_print_screen();
@@ -557,7 +559,7 @@ static void control_set(uint8_t id, control_t *control)
     {
         if (control->hw_id < ENCODERS_COUNT)
         {
-            if (g_current_overlay_actuator != -1)
+            if (plugin_edit.current_overlay_control_index != -1)
             {
                 hardware_force_overlay_off(0);
                 BM_print_screen();
@@ -571,7 +573,7 @@ static void control_set(uint8_t id, control_t *control)
     {
         if (control->hw_id < ENCODERS_COUNT)
         {
-            if (g_current_overlay_actuator != -1)
+            if (plugin_edit.current_overlay_control_index != -1)
             {
                 hardware_force_overlay_off(0);
                 BM_print_screen();
@@ -589,13 +591,12 @@ static void control_set(uint8_t id, control_t *control)
         && (control->hw_id < ENCODERS_COUNT))
         return;
 
-//    log_info("sending control set %f", control->value);
     send_control_set(control);
 }
 
 static void BM_inc_control(uint8_t encoder)
 {
-    control_t *control = g_controls[encoder];
+    control_t *control = plugin_edit.controls[encoder];
 
     //no control
     if (!control) return;
@@ -608,54 +609,14 @@ static void BM_inc_control(uint8_t encoder)
         //prepare display overlay
         BM_print_control_overlay(control, ENCODER_LIST_TIMEOUT);
 
-        if (control->scale_points_flag & FLAG_SCALEPOINT_PAGINATED) {
-            // increments the step
-            if (control->step < (control->scale_points_count - 3)) {
-                if (control->scale_point_index >= control->steps)
-                    return;
-
-                control->step++;
-                control->scale_point_index++;
-            }
-            //we are at the end of our list ask for more data
-            else {
-                if ((control->scale_point_index >= control->steps - 2) ) {
-
-                    if (control->scale_point_index >= control->steps)
-                        return;
-
-                    control->step++;
-                    control->scale_point_index++;
-
-                    if (!g_list_click) {
-                        // converts the step to absolute value
-                        step_to_value(control);
-
-                        //make sure to save this value, in case the user switches mode
-                        clone_list_encoders(control);
-                    }
-
-                    // applies the control value
-                    control_set(encoder, control);
-                }
-                else if (control->scale_point_index < control->steps - 1) {
-                    //request new data, a new control we be assigned after
-                    //request_control_page(control, 1);
-                }
-
-                //since a new control is assigned we can return
-                return;
-            }       
+        /* we don't support paginated controls atm */
+        // increments the step
+        if ((control->step < (control->steps)) && (control->step < (control->scale_points_count))) {
+            control->scale_point_index++;
+            control->step++;
         }
-        else  {
-            // increments the step
-            if ((control->step < (control->steps)) && (control->step < (control->scale_points_count))) {
-                control->scale_point_index++;
-                control->step++;
-            }
-            else
-                return; 
-        }
+        else
+            return;
     }
     else if (control->properties & FLAG_CONTROL_TRIGGER) {
         control->value = control->maximum;
@@ -703,23 +664,18 @@ static void BM_inc_control(uint8_t encoder)
 
 static void BM_dec_control(uint8_t encoder)
 {
-    control_t *control = g_controls[encoder];
-    log_info("dec encoder %p", control);
+    control_t *control = plugin_edit.controls[encoder];
 
     //no control, return
     if (!control) return;
 
-    int i = 0;
-    log_info("control dec %d %p",i++, encoder);
 
     //if we already have an overlay, reprint the full screen first
     if ((hardware_get_overlay_counter() != 0) && (hardware_get_overlay_type() == OVERLAY_ATTENTION))
         hardware_force_overlay_off(0);
-    log_info("control dec %d %p",i++, encoder);
     
     if  (control->properties & (FLAG_CONTROL_ENUMERATION | FLAG_CONTROL_SCALE_POINTS | FLAG_CONTROL_REVERSE))  {
         //prepare display overlay
-        log_info("control dec enum %d %p",i++, encoder);
         BM_print_control_overlay(control, ENCODER_LIST_TIMEOUT);
 
         if (control->scale_points_flag & FLAG_SCALEPOINT_PAGINATED) {
@@ -762,8 +718,6 @@ static void BM_dec_control(uint8_t encoder)
             }
             else
             {
-                log_info("control dec exit1 %d %p",i++, encoder);
-
                 return;
             }
         }
@@ -784,7 +738,6 @@ static void BM_dec_control(uint8_t encoder)
             control->value = 1;
     }
     else {
-        log_info("control step %d", control->step);
         // decrements the step
         if (control->step > 0)
         {
@@ -800,8 +753,6 @@ static void BM_dec_control(uint8_t encoder)
             return;
     }
 
-    log_info("control dec %d %p",i++, encoder);
-
     if ((!g_list_click) || !(control->properties & (FLAG_CONTROL_ENUMERATION | FLAG_CONTROL_SCALE_POINTS | FLAG_CONTROL_REVERSE)) ) {
         // converts the step to absolute value
         step_to_value(control);
@@ -811,8 +762,6 @@ static void BM_dec_control(uint8_t encoder)
         //make sure to save this value, in case the user switches mode
         clone_list_encoders(control);
     }
-
-    log_info("control dec %d %p",i++, encoder);
 
     // applies the control value
     control_set(encoder, control);
@@ -826,6 +775,15 @@ static void BM_dec_control(uint8_t encoder)
 */
 void BM_init(void)
 {
+    plugin_edit.plugin_name = "";
+    plugin_edit.plugin_uid = NULL;
+    plugin_edit.controls[0] = NULL;
+    plugin_edit.controls[1] = NULL;
+    plugin_edit.controls[2] = NULL;
+    plugin_edit.controls_count = 0;
+    plugin_edit.current_page = 0;
+    plugin_edit.page_count = 0;
+    plugin_edit.current_overlay_control_index = -1;
     pluginMenuItem.name = strdup("Plugins");
 }
 
@@ -838,7 +796,6 @@ void BM_clear(void)
  */
 void BM_set_state(void)
 {
-    log_info("Entering Builder Mode");
     uiState = PLUGIN_SELECT;
     g_current_plugin = 0;
     g_selected_plugin = 0;
@@ -878,7 +835,8 @@ void BM_up(uint8_t encoder)
         else
             g_current_plugin = pluginMenuItem.data.list_count - 1;
 
-        pluginMenuItem.data.hover = g_current_plugin;
+        pluginMenuItem.data.selected = g_plugins->selected = g_current_plugin;
+        pluginMenuItem.data.hover = g_plugins->hover = g_current_plugin;
         BM_print_screen();
     } else if (uiState == PLUGIN_EDIT) {
         BM_dec_control(encoder);
@@ -893,7 +851,8 @@ void BM_down(uint8_t encoder)
         else
             g_current_plugin++;
 
-        pluginMenuItem.data.hover = g_current_plugin;
+        pluginMenuItem.data.selected = g_plugins->selected = g_current_plugin;
+        pluginMenuItem.data.hover = g_plugins->hover = g_current_plugin;
         BM_print_screen();
     } else if (uiState == PLUGIN_EDIT) {
         BM_inc_control(encoder);
@@ -912,7 +871,33 @@ void BM_button_pressed(uint8_t button)
             if (uiState == PLUGIN_EDIT) 
             {
                 uiState = PLUGIN_SELECT;
-                request_plugins(PAGE_DIR_INIT);
+                BM_print_screen();
+            }
+            else
+            {
+                // this should exit shift mode
+                naveg_trigger_mode_change(MODE_CONTROL);
+            }
+        break;
+
+        case 1:
+            if (uiState == PLUGIN_EDIT) {
+                if (plugin_edit.current_page > 0) {
+                    plugin_edit.current_page--;
+                    request_current_page_controls();
+                    BM_print_screen();
+                }
+            }
+        break;
+        
+        case 2:
+           if (uiState == PLUGIN_EDIT) 
+            {
+                /* next page */
+                if (plugin_edit.current_page < plugin_edit.page_count - 1) {
+                    plugin_edit.current_page++;
+                    request_current_page_controls();
+                }
             }
             else
             {
@@ -921,37 +906,8 @@ void BM_button_pressed(uint8_t button)
                     list_select_plugin(g_current_plugin);
                 }
             }
+            BM_print_screen();
         break;
-
-        case 1:
-            if (uiState == PLUGIN_EDIT) {
-                if (plugin_edit.current_page > 0)
-                    plugin_edit.current_page--;
-
-                request_current_page_controls();
-            }
-        break;
-        
-        case 2:
-           if (uiState == PLUGIN_EDIT) 
-            {
-                /* next page */
-                if (plugin_edit.current_page < plugin_edit.page_count - 1)
-                    plugin_edit.current_page++;
-
-                request_current_page_controls();
-            }
-            else
-            {
-                naveg_trigger_mode_change(MODE_CONTROL);
-            }
-        break;
-    }
-
-    // if the user didn't close the builder mode, update the screen
-    if (naveg_get_current_mode() == MODE_BUILDER)
-    {
-        BM_print_screen();
     }
 }
 
@@ -971,10 +927,6 @@ void BM_add_control(control_t *control, uint8_t protocol)
     {
         encoder_control_add(control);
     }
-    else
-    {
-        //foot_control_add(control);     
-    }
 }
 
 void BM_remove_control(uint8_t hw_id)
@@ -987,7 +939,7 @@ void BM_remove_control(uint8_t hw_id)
 
 void BM_print_control_overlay(control_t *control, uint16_t overlay_time)
 {
-    g_current_overlay_actuator = control->hw_id;
+    plugin_edit.current_overlay_control_index = control->hw_id;
 
     screen_control_overlay(control);
 
@@ -995,16 +947,9 @@ void BM_print_control_overlay(control_t *control, uint16_t overlay_time)
 }
 
 
-//function that draws the 3 encoders
-void BM_draw_encoders(void)
-{
-
-   
-}
-
 void BM_close_overlay(void)
 {
-    if (g_list_click && (g_current_overlay_actuator < ENCODERS_COUNT))
+    if (g_list_click && (plugin_edit.current_overlay_control_index < ENCODERS_COUNT))
         reset_list_encoders();
 
     BM_print_screen();
@@ -1027,15 +972,5 @@ void BM_print_screen(void)
             break;
     }
     //we are sure we are not in overlay anymore
-    g_current_overlay_actuator = -1;
-
-    // char str[20];
-    // sprintf(str, "%d", (int)g_current_plugin);
-    // screen_text_box(10, 20, str);
-
-    // sprintf(str, "%d", (int)g_selected_plugin);
-    // screen_text_box(10, 40, str);
-
-    // sprintf(str, "%d", (int)pluginMenuItem.data.list_count);
-    // screen_text_box(10, 30, str);
+    plugin_edit.current_overlay_control_index = -1;
 }

@@ -1,4 +1,8 @@
 
 #include <stdlib.h>
 
-void log_info(const char *fmt,...);
+#ifdef DEBUG
+    void log_info(const char *fmt, ...);
+#else
+#define log_info(fmt, ...)
+#endif

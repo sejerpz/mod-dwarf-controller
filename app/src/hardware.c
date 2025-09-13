@@ -227,6 +227,9 @@ static const uint8_t *LED_COLORS[]  = {
 #ifdef DEFAULT_MENU_OK_COLOR
     (const uint8_t []) DEFAULT_MENU_OK_COLOR,
 #endif
+#ifdef DEFAULT_BUILDER_COLOR
+    (const uint8_t []) DEFAULT_BUILDER_COLOR,
+#endif
 };
 
 /*

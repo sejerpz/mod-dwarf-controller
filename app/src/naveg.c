@@ -179,7 +179,7 @@ void enter_shift_menu(void)
     set_ledz_trigger_by_color_id(led, LED_ON, led_state);
 
     led = hardware_leds(5);
-    set_ledz_trigger_by_color_id(led, LED_OFF, led_state);
+    set_ledz_trigger_by_color_id(led, LED_ON, led_state);
 
     led = hardware_leds(6);
     set_ledz_trigger_by_color_id(led, LED_ON, led_state);
@@ -1147,9 +1147,9 @@ void naveg_button_pressed(uint8_t button)
                 //TODO enter builder mode
                 case 2:
                     // close the shitf menu
-                    exit_shift_menu(); 
-                    g_device_mode = MODE_BUILDER;
-                    BM_set_state();
+                    exit_shift_menu();
+                    naveg_shift_pressed();
+                    naveg_trigger_mode_change(MODE_BUILDER);
                 break;
             }
         break;

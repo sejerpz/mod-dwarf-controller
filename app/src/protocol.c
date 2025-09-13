@@ -788,7 +788,6 @@ void cb_control_add(uint8_t serial_id, proto_t *proto)
 
     control_t *control = data_parse_control(proto->list);
 
-    //log_info("control add: %s", control->hw_id);
     if (naveg_get_current_mode() == MODE_BUILDER)
     {
         BM_add_control(control, 1);
@@ -797,7 +796,6 @@ void cb_control_add(uint8_t serial_id, proto_t *proto)
     {
         CM_add_control(control, 1);
     }
-    
     protocol_send_response(CMD_RESPONSE, 0, proto);
 }
 

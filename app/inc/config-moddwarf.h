@@ -396,7 +396,8 @@ enum {ENCODER0, ENCODER1, ENCODER2, FOOTSWITCH0, FOOTSWITCH1, FOOTSWITCH2, BUTTO
 #define BANK_COLOR                28
 #define PB_COLOR                  29
 #define MENU_OK_COLOR             30
-#define MAX_COLOR_ID              31
+#define BUILDER_COLOR             31
+#define MAX_COLOR_ID              32
 
 #define DEFAULT_TOGGLED_COLOR             {100,0,0}
 #define DEFAULT_TRIGGER_COLOR             {80,80,80}
@@ -429,6 +430,7 @@ enum {ENCODER0, ENCODER1, ENCODER2, FOOTSWITCH0, FOOTSWITCH1, FOOTSWITCH2, BUTTO
 #define DEFAULT_BANK_COLOR                {40,50,100}
 #define DEFAULT_PB_COLOR                  {80,0,80}
 #define DEFAULT_MENU_OK_COLOR             {80,80,80}
+#define DEFAULT_BUILDER_COLOR             {10,80,80}
 
 //alternate LED colors for lists
 #define LED_LIST_AMOUNT_OF_COLORS         7
@@ -524,7 +526,7 @@ enum {ENCODER0, ENCODER1, ENCODER2, FOOTSWITCH0, FOOTSWITCH1, FOOTSWITCH2, BUTTO
 #define EEPROM_VERSION_ADRESS              62
 
 //for version control, when increasing they ALWAYS need to be bigger then the previous value
-#define EEPROM_CURRENT_VERSION             6L
+#define EEPROM_CURRENT_VERSION             7L
 
 //for testing purposes, overwrites the EEPROM regardless of the version
 #define FORCE_WRITE_EEPROM                 0

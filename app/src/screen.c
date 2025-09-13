@@ -943,6 +943,7 @@ void screen_tittle(int8_t pb_ss)
     else
         icon_pedalboard(display, ((DISPLAY_WIDTH / 2) - (3*name_len) + 7) - 11, 1);
 
+    icon_custom_firmware(display, DISPLAY_WIDTH - 10, 1);
     //invert the top bar
     glcd_rect_invert(display, 0, 0, DISPLAY_WIDTH, 9);
 }
@@ -1549,6 +1550,7 @@ void screen_shift_overlay(int8_t prev_mode, int16_t *item_ids, uint8_t ui_connec
     title.align = ALIGN_CENTER_TOP;
     widget_textbox(display, &title);
 
+    icon_custom_firmware(display, DISPLAY_WIDTH - 10, 1);
     //invert the title area
     glcd_rect_invert(display, 0, 0, DISPLAY_WIDTH, 9);
 
@@ -1871,15 +1873,14 @@ void screen_plugins_list(menu_item_t *item)
     print_menu_outlines();
 
     //print the 3 buttons
+    glcd_text(display, 22, DISPLAY_HEIGHT - 7, "EXIT", Terminal3x5, GLCD_BLACK);
     glcd_text(display, 61, DISPLAY_HEIGHT - 7, "-", Terminal3x5, GLCD_BLACK);
-
-    glcd_text(display, 91, DISPLAY_HEIGHT - 7, "EXIT", Terminal3x5, GLCD_BLACK);
 
     // menu list
     if (item->data.list)
     {
         //draw the third box, save PB
-        glcd_text(display, 18, DISPLAY_HEIGHT - 7, "SELECT", Terminal3x5, GLCD_BLACK);
+        glcd_text(display, 86, DISPLAY_HEIGHT - 7, "SELECT", Terminal3x5, GLCD_BLACK);
 
         listbox_t list;
         list.x = 6;
@@ -1895,7 +1896,7 @@ void screen_plugins_list(menu_item_t *item)
 
         list.hover = item->data.hover;
         list.selected = item->data.selected;
-        list.count = MENU_VISIBLE_LIST_CUT;
+        list.count = item->data.list_count;
         list.list = item->data.list;
         widget_menu_listbox(display, &list);
     }
@@ -1905,6 +1906,26 @@ void screen_plugins_list(menu_item_t *item)
 
         glcd_text(display, DISPLAY_WIDTH / 2 - 32, DISPLAY_HEIGHT / 2 -5, "NO PLUGINS", Terminal7x8, GLCD_BLACK);
     }
+
+    // led handling
+    //turn off foot leds
+    for (uint8_t i = 0; i < FOOTSWITCHES_COUNT; i++)
+        ledz_off(hardware_leds(i), WHITE);
+
+    led_state_t led_state;
+    led_state.color = BUILDER_COLOR;
+
+    ledz_t* led = hardware_leds(3);
+    set_ledz_trigger_by_color_id(led, LED_ON, led_state);
+
+    led = hardware_leds(4);
+    set_ledz_trigger_by_color_id(led, LED_OFF, led_state);
+
+    led = hardware_leds(5);
+    set_ledz_trigger_by_color_id(led, LED_ON, led_state);
+
+    led = hardware_leds(6);
+    set_ledz_trigger_by_color_id(led, LED_OFF, led_state);
 }
 
 /*
@@ -1940,6 +1961,8 @@ void screen_plugin_edit(plugin_edit_t *model)
     }
 
     icon_plugin(display, ((DISPLAY_WIDTH / 2) - (3*title_len) + 7) - 11, 1);
+    icon_custom_firmware(display, DISPLAY_WIDTH - 10, 1);
+
     //invert the top bar
     glcd_rect_invert(display, 0, 0, DISPLAY_WIDTH, 9);
 
@@ -1949,8 +1972,8 @@ void screen_plugin_edit(plugin_edit_t *model)
     screen_encoder_container_paged(model->current_page, model->page_count);
     for (int i = 0; i < ENCODERS_COUNT; i++)
     {
-        const control_t* control = model->controls ? model->controls[i] : NULL;
-        
+        const control_t* control = model->controls[i];
+
         // checks the function assigned to foot and update the footer
         if (control)
         {
@@ -1962,13 +1985,40 @@ void screen_plugin_edit(plugin_edit_t *model)
         }
     }
 
+    // led handling
+    //turn off foot leds
+    for (uint8_t i = 0; i < FOOTSWITCHES_COUNT; i++)
+        ledz_off(hardware_leds(i), WHITE);
+
+    led_state_t led_state;
+    led_state.color = BUILDER_COLOR;
+
+    ledz_t* led = hardware_leds(6);
+    set_ledz_trigger_by_color_id(led, LED_OFF, led_state);
+
+    led = hardware_leds(3);
+    set_ledz_trigger_by_color_id(led, LED_ON, led_state);
     glcd_text(display, 16, DISPLAY_HEIGHT - 7, "PLUGINS", Terminal3x5, GLCD_BLACK);
+
+    led = hardware_leds(4);
     if (model->current_page > 0)
     {
         glcd_text(display, 62, DISPLAY_HEIGHT - 7, "<", Terminal3x5, GLCD_BLACK);
+        set_ledz_trigger_by_color_id(led, LED_ON, led_state);
     }
+    else
+    {
+        set_ledz_trigger_by_color_id(led, LED_OFF, led_state);
+    }
+
+    led = hardware_leds(5);
     if (model->page_count > 1 && model->current_page < model->page_count - 1)
     {
         glcd_text(display, 96, DISPLAY_HEIGHT - 7, ">", Terminal3x5, GLCD_BLACK);
+        set_ledz_trigger_by_color_id(led, LED_ON, led_state);
+    }
+    else
+    {
+        set_ledz_trigger_by_color_id(led, LED_OFF, led_state);
     }
 }

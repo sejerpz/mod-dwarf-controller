@@ -1459,6 +1459,38 @@ void icon_snapshot(glcd_t *display, uint8_t x, uint8_t y)
     glcd_rect(display, x+4, y+4, 1, 1, GLCD_BLACK);
 }
 
+void icon_custom_firmware(glcd_t *display, uint8_t x, uint8_t y)
+{
+    // clears the icon area
+    glcd_rect_fill(display, x, y, 9, 7, GLCD_WHITE);
+
+    //      glider
+    //     123456789
+    //    1         
+    //    2         
+    //    3    *    
+    //    4     *   
+    //    5   ***   
+    //    6         
+    //    7         
+
+    //      glider
+    //     123456789
+    //    1         
+    //    2    *    
+    //    3         
+    //    4      *  
+    //    5         
+    //    6  * * *  
+    //    7         
+
+    glcd_set_pixel(display, x + 5, y + 1, GLCD_BLACK);
+    glcd_set_pixel(display, x + 7, y + 3, GLCD_BLACK);
+    glcd_set_pixel(display, x + 3, y + 5, GLCD_BLACK);
+    glcd_set_pixel(display, x + 5, y + 5, GLCD_BLACK);
+    glcd_set_pixel(display, x + 7, y + 5, GLCD_BLACK);
+}
+
 void icon_pedalboard(glcd_t *display, uint8_t x, uint8_t y)
 {
     // clears the icon area

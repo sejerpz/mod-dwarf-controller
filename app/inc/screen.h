@@ -48,13 +48,15 @@ typedef struct {
 	/* current selected plugin uri */
 	const char* plugin_uid;
      /* controls of the plugin */
-    control_t **controls;
+    control_t *controls[ENCODERS_COUNT];
     /* number of controls */
     uint8_t controls_count; 
     /* current page: controls are paginated 3 per page*/
     uint8_t current_page;
     /* number of pages: g_controls_count / 3 */
     uint8_t page_count;    // current page of the plugin controls (dwarf: 3 controls per page)
+    /* current overlay actuator */
+    int8_t current_overlay_control_index;
 } plugin_edit_t;
 
 /*
