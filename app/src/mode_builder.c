@@ -327,7 +327,7 @@ static void clone_list_encoders(control_t *control)
 
     item->data.list = g_plugins->names;
     item->data.list_count = count / 2; // why count is two time the effective # elements?
-    item->data.selected = g_current_plugin;
+    item->data.selected = item->data.hover = g_current_plugin;
 }
 
 /*
