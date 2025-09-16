@@ -767,6 +767,64 @@ static void BM_dec_control(uint8_t encoder)
     control_set(encoder, control);
 }
 
+/*
+ * Toggle control value on encoder click if appliable
+ */
+static void BM_toggle_control(uint8_t encoder)
+{
+    control_t *control = plugin_edit.controls[encoder];
+
+    //no control
+    if (!control) return;
+
+    //if we already have an overlay, reprint the full screen first
+    if ((hardware_get_overlay_counter() != 0) && (hardware_get_overlay_type() == OVERLAY_ATTENTION))
+        hardware_force_overlay_off(0);
+
+    if (control->properties & FLAG_CONTROL_TRIGGER)
+    {
+        control->value = control->maximum;
+    }
+    else if ((control->properties & FLAG_CONTROL_TOGGLED) || (control->properties & FLAG_CONTROL_BYPASS))
+    {
+        control->value = float_is_zero(control->value) ? 1 : 0;
+    }
+    else if (control->properties & (FLAG_CONTROL_ENUMERATION | FLAG_CONTROL_SCALE_POINTS | FLAG_CONTROL_REVERSE))
+    {
+        //no overlay active, toggle
+        if (plugin_edit.current_overlay_control_index == -1)
+        {
+            BM_print_control_overlay(control, ENCODER_LIST_TIMEOUT);
+        }
+        //list click, change and set value, then close overlay
+        else if (g_list_click)
+        {
+            step_to_value(control);
+            send_control_set(control);
+
+            clone_list_encoders(control);
+
+            plugin_edit.current_overlay_control_index = -1;
+            BM_print_screen();
+
+            return;
+        }
+        //overlay already active, close
+        else
+        {
+            plugin_edit.current_overlay_control_index = -1;
+            BM_print_screen();
+        }
+
+        return;
+    }
+    else
+        return;
+
+    // applies the control value
+    control_set(encoder, control);
+}
+
 
 /*
 ************************************************************************************************************************
@@ -807,25 +865,21 @@ void BM_set_state(void)
 
 void BM_encoder_click(uint8_t encoder)
 {
-     switch (encoder)
-     {
-        case 0:
-            if (uiState == PLUGIN_SELECT)
-            {
-                // if there is some plugin
-                if (pluginMenuItem.data.list_count > 0) {
+    if (uiState == PLUGIN_SELECT) {
+        if (encoder == 0) {
+            // if there is some plugin
+            if (pluginMenuItem.data.list_count > 0) {
 
-                    uiState = PLUGIN_EDIT;
-                    list_select_plugin(g_current_plugin);
-                    BM_print_screen();
-                }
+                uiState = PLUGIN_EDIT;
+                list_select_plugin(g_current_plugin);
+                BM_print_screen();
             }
-        break;
-        
-        default:
-        break;
-     }
+        }
+    } else {
+        BM_toggle_control(encoder);
+    }
 }
+
 
 void BM_up(uint8_t encoder)
 {
