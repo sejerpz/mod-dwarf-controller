@@ -611,7 +611,7 @@ static void BM_inc_control(uint8_t encoder)
 
         /* we don't support paginated controls atm */
         // increments the step
-        if ((control->step < (control->steps)) && (control->step < (control->scale_points_count))) {
+        if ((control->step < (control->steps - 1)) && (control->step < (control->scale_points_count - 1))) {
             control->scale_point_index++;
             control->step++;
         }
