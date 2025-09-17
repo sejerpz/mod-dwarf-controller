@@ -611,7 +611,7 @@ static void BM_inc_control(uint8_t encoder)
 
         /* we don't support paginated controls atm */
         // increments the step
-        if ((control->step < (control->steps - 1)) && (control->step < (control->scale_points_count - 1))) {
+        if ((control->step < (control->steps)) && (control->step < (control->scale_points_count))) {
             control->scale_point_index++;
             control->step++;
         }
@@ -678,39 +678,40 @@ static void BM_dec_control(uint8_t encoder)
         //prepare display overlay
         BM_print_control_overlay(control, ENCODER_LIST_TIMEOUT);
 
-        if (control->scale_points_flag & FLAG_SCALEPOINT_PAGINATED) {
-            // decrements the step
-            if (control->step > 2) {
-                control->step--;
-                control->scale_point_index--;
-            }
-            //we are at the end of our list ask for more data
-            else {
-                if ((control->scale_point_index <= 2) && (control->scale_point_index > 0)) {
-                    control->step--;
-                    control->scale_point_index--;
+        // STILL DON'T SUPPORT THIS
+        // if (control->scale_points_flag & FLAG_SCALEPOINT_PAGINATED) {
+        //     // decrements the step
+        //     if (control->step > 2) {
+        //         control->step--;
+        //         control->scale_point_index--;
+        //     }
+        //     //we are at the end of our list ask for more data
+        //     else {
+        //         if ((control->scale_point_index <= 2) && (control->scale_point_index > 0)) {
+        //             control->step--;
+        //             control->scale_point_index--;
 
-                    if (!g_list_click) {
-                        // converts the step to absolute value
-                        step_to_value(control);
+        //             if (!g_list_click) {
+        //                 // converts the step to absolute value
+        //                 step_to_value(control);
 
-                        //make sure to save this value, in case the user switches mode
-                        clone_list_encoders(control);
-                    }
+        //                 //make sure to save this value, in case the user switches mode
+        //                 clone_list_encoders(control);
+        //             }
 
-                    // applies the control value
-                    control_set(encoder, control);
-                }
-                else if (control->scale_point_index > 0) {
-                    //request new data, a new control we be assigned after
-                    //request_control_page(control, 0);
-                }
+        //             // applies the control value
+        //             control_set(encoder, control);
+        //         }
+        //         else if (control->scale_point_index > 0) {
+        //             //request new data, a new control we be assigned after
+        //             //request_control_page(control, 0);
+        //         }
 
-                //since a new control is assigned we can return
-                return;
-            }
-        }
-        else {
+        //         //since a new control is assigned we can return
+        //         return;
+        //     }
+        // }
+        // else {
             // decrements the step
             if (control->step > 0) {
                 control->scale_point_index--;
@@ -720,7 +721,7 @@ static void BM_dec_control(uint8_t encoder)
             {
                 return;
             }
-        }
+        //}
     }
     else if (control->properties & FLAG_CONTROL_TRIGGER) {
         control->value = control->maximum;
