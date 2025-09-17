@@ -1420,5 +1420,7 @@ void naveg_print_screen_data(uint8_t display)
 
         //wait for a response from mod-ui
         ui_comm_webgui_wait_response();
+
+        vTaskDelay(10 / portTICK_PERIOD_MS);
     }
 }
