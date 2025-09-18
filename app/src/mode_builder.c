@@ -972,14 +972,12 @@ void BM_add_control(control_t *control, uint8_t protocol)
     if (!g_initialized) return;
     if (!control) return;
 
-    // first tries remove the control
-    BM_remove_control(control->hw_id);
-
     if (protocol) control->scroll_dir = 2;
     else control->scroll_dir = 0;
 
     if (control->hw_id < ENCODERS_COUNT)
     {
+        // this routine remove and deallocate the previous control too if present
         encoder_control_add(control);
     }
 }
