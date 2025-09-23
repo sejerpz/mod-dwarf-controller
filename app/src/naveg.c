@@ -415,6 +415,7 @@ void naveg_ui_connection(uint8_t status)
             }
         break;
 
+        case MODE_BUILDER:
         case MODE_NAVIGATION:
             //enter control mode
             g_device_mode = MODE_CONTROL;
@@ -424,12 +425,6 @@ void naveg_ui_connection(uint8_t status)
         case MODE_TOOL_FOOT:
         case MODE_TOOL_MENU:
             //no action needed
-        break;
-
-        case MODE_BUILDER:
-            //enter control mode
-            g_device_mode = MODE_CONTROL;
-            BM_set_state();
         break;
     }
 }
