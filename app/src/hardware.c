@@ -906,8 +906,9 @@ void hardware_force_overlay_off(uint8_t avoid_callback)
 {
     g_overlay_counter = 0;
 
-    if (g_overlay_callback && !avoid_callback)
+    if (g_overlay_callback && !avoid_callback) {
         g_overlay_callback();
+    }
 
     g_overlay_callback = NULL;
 }

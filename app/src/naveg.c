@@ -554,7 +554,7 @@ void naveg_enc_down(uint8_t encoder)
     if (encoder >= ENCODERS_COUNT) return;
 
     if ((hardware_get_overlay_counter() != 0) &&
-        ((g_device_mode != MODE_CONTROL) || (hardware_get_overlay_type() == OVERLAY_WIDGET))) {
+        ((g_device_mode != MODE_CONTROL && g_device_mode != MODE_BUILDER) || (hardware_get_overlay_type() == OVERLAY_WIDGET))) {
 
         hardware_force_overlay_off(0);
         return;
@@ -656,7 +656,7 @@ void naveg_enc_up(uint8_t encoder)
     if (encoder >= ENCODERS_COUNT) return;
 
     if ((hardware_get_overlay_counter() != 0) &&
-        ((g_device_mode != MODE_CONTROL) || (hardware_get_overlay_type() == OVERLAY_WIDGET))) {
+        ((g_device_mode != MODE_CONTROL && g_device_mode != MODE_BUILDER) || (hardware_get_overlay_type() == OVERLAY_WIDGET))) {
 
         hardware_force_overlay_off(0);
         return;

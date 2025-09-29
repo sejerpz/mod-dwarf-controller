@@ -498,6 +498,10 @@ static void send_control_set(control_t *control)
     i += float_to_str(control->value, &buffer[i], sizeof(buffer) - i, 3);
     buffer[i] = 0;
 
+    ui_comm_webgui_set_response_cb(NULL, NULL);
+    //clear the buffer
+    ui_comm_webgui_clear_tx_buffer();
+
     // sends the data to GUI
     ui_comm_webgui_send(buffer, i);
 
@@ -602,8 +606,9 @@ static void BM_inc_control(uint8_t encoder)
     if (!control) return;
 
     //if we already have an overlay, reprint the full screen first
-    if ((hardware_get_overlay_counter() != 0) && (hardware_get_overlay_type() == OVERLAY_ATTENTION))
+    if ((hardware_get_overlay_counter() != 0) && (hardware_get_overlay_type() == OVERLAY_ATTENTION)) {
         hardware_force_overlay_off(0);
+    }
 
     if (control->properties & (FLAG_CONTROL_ENUMERATION | FLAG_CONTROL_SCALE_POINTS | FLAG_CONTROL_REVERSE)) {
         //prepare display overlay
@@ -614,9 +619,9 @@ static void BM_inc_control(uint8_t encoder)
         if ((control->step < (control->steps)) && (control->step < (control->scale_points_count))) {
             control->scale_point_index++;
             control->step++;
-        }
-        else
+        }  else {
             return;
+        }
     }
     else if (control->properties & FLAG_CONTROL_TRIGGER) {
         control->value = control->maximum;
@@ -671,8 +676,9 @@ static void BM_dec_control(uint8_t encoder)
 
 
     //if we already have an overlay, reprint the full screen first
-    if ((hardware_get_overlay_counter() != 0) && (hardware_get_overlay_type() == OVERLAY_ATTENTION))
+    if ((hardware_get_overlay_counter() != 0) && (hardware_get_overlay_type() == OVERLAY_ATTENTION)) {
         hardware_force_overlay_off(0);
+    }
     
     if  (control->properties & (FLAG_CONTROL_ENUMERATION | FLAG_CONTROL_SCALE_POINTS | FLAG_CONTROL_REVERSE))  {
         //prepare display overlay
@@ -779,8 +785,9 @@ static void BM_toggle_control(uint8_t encoder)
     if (!control) return;
 
     //if we already have an overlay, reprint the full screen first
-    if ((hardware_get_overlay_counter() != 0) && (hardware_get_overlay_type() == OVERLAY_ATTENTION))
+    if ((hardware_get_overlay_counter() != 0) && (hardware_get_overlay_type() == OVERLAY_ATTENTION)) {
         hardware_force_overlay_off(0);
+    }
 
     if (control->properties & FLAG_CONTROL_TRIGGER)
     {
@@ -884,15 +891,17 @@ void BM_encoder_click(uint8_t encoder)
 
 void BM_up(uint8_t encoder)
 {
-    if (uiState == PLUGIN_SELECT && encoder == 0) {
-        if (g_current_plugin > 0)
-            g_current_plugin--;
-        else
-            g_current_plugin = pluginMenuItem.data.list_count - 1;
+    if (uiState == PLUGIN_SELECT) {
+        if (encoder == 0) {
+            if (g_current_plugin > 0)
+                g_current_plugin--;
+            else
+                g_current_plugin = pluginMenuItem.data.list_count - 1;
 
-        pluginMenuItem.data.selected = g_plugins->selected = g_current_plugin;
-        pluginMenuItem.data.hover = g_plugins->hover = g_current_plugin;
-        BM_print_screen();
+            pluginMenuItem.data.selected = g_plugins->selected = g_current_plugin;
+            pluginMenuItem.data.hover = g_plugins->hover = g_current_plugin;
+            BM_print_screen();
+        }
     } else if (uiState == PLUGIN_EDIT) {
         BM_dec_control(encoder);
     }
@@ -900,15 +909,17 @@ void BM_up(uint8_t encoder)
 
 void BM_down(uint8_t encoder)
 {
-    if (uiState == PLUGIN_SELECT && encoder == 0) {
-        if (g_current_plugin >= pluginMenuItem.data.list_count - 1)
-            g_current_plugin = 0;
-        else
-            g_current_plugin++;
+    if (uiState == PLUGIN_SELECT) {
+        if (encoder == 0) {
+            if (g_current_plugin >= pluginMenuItem.data.list_count - 1)
+                g_current_plugin = 0;
+            else
+                g_current_plugin++;
 
-        pluginMenuItem.data.selected = g_plugins->selected = g_current_plugin;
-        pluginMenuItem.data.hover = g_plugins->hover = g_current_plugin;
-        BM_print_screen();
+            pluginMenuItem.data.selected = g_plugins->selected = g_current_plugin;
+            pluginMenuItem.data.hover = g_plugins->hover = g_current_plugin;
+            BM_print_screen();
+        }
     } else if (uiState == PLUGIN_EDIT) {
         BM_inc_control(encoder);
     }
