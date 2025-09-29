@@ -21,7 +21,7 @@
 #include "screen.h"
 #include "ui_comm.h"
 #include "mode_builder.h"
-#include "loggin.h"
+#include "logging.h"
 
 /*
 ************************************************************************************************************************

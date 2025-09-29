@@ -17,7 +17,7 @@
 #include "mode_navigation.h"
 #include <string.h>
 #include <stdio.h>
-#include "loggin.h"
+#include "logging.h"
 
 /*
 ************************************************************************************************************************

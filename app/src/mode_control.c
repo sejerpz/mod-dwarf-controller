@@ -29,6 +29,8 @@
 #include "mode_control.h"
 #include "mode_tools.h"
 
+#include "logging.h"
+
 //reset actuator queue
 void reset_queue(void);
 /*

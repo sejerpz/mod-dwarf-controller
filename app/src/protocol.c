@@ -24,7 +24,7 @@
 #include "mode_navigation.h"
 #include "mode_tools.h"
 #include "mode_builder.h"
-#include "loggin.h"
+#include "logging.h"
 
 uint8_t g_screenshot = 0;
 
