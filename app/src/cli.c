@@ -18,6 +18,7 @@
 #include "FreeRTOS.h"
 #include "semphr.h"
 #include "mode_control.h"
+#include "mode_builder.h"
 
 #include <string.h>
 
@@ -439,6 +440,7 @@ uint8_t cli_restore(uint8_t action)
         uint8_t j = 0;
         for (j=0; j < TOTAL_CONTROL_ACTUATORS; j++)
         {
+            BM_remove_control(j);
             CM_remove_control(j);
         }
 
