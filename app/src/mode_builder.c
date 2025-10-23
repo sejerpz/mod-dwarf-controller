@@ -99,6 +99,8 @@ static void encoder_control_rm(uint8_t hw_id);
 static void reset_list_encoders(void);
 static void clone_list_encoders(control_t *control);
 static void request_plugins(uint8_t dir);
+static void request_control_page(control_t *control, uint8_t dir);
+static void send_control_set(control_t *control);
 
 // control assigned to display
 static void encoder_control_add(control_t *control)
@@ -464,6 +466,98 @@ static void request_current_page_controls(void)
     request_plugin_controls(plugin_edit.plugin_uid, start_index, count);
 }
 
+
+static void parse_control_page(void *data, menu_item_t *item)
+{
+    (void) item;
+    char **list = data;
+
+    control_t *control = data_parse_control(&list[1]);
+
+    // first tries remove the control
+    if (control->hw_id < 3) {
+        encoder_control_rm(control->hw_id);
+    }
+
+    control->scroll_dir = 0;
+
+    if (control->hw_id < ENCODERS_COUNT)
+        plugin_edit.controls[control->hw_id] = control;
+}
+
+/*
+ For enumerated plugin parameter request a page of options
+*/
+static void request_control_page(control_t *control, uint8_t dir)
+{
+    // sets the response callback
+    ui_comm_webgui_set_response_cb(parse_control_page, NULL);
+
+    char buffer[20];
+    memset(buffer, 0, sizeof buffer);
+    uint8_t i;
+    uint8_t hw_id = control->hw_id;
+
+    i = copy_command(buffer, CMD_DWARF_BUILDER_CONTROL_PAGE);
+
+    // insert the hw_id on buffer
+    i += int_to_str(hw_id, &buffer[i], sizeof(buffer) - i, 0);
+
+    // inserts one space
+    buffer[i++] = ' ';
+
+    //bitmask for the page direction and wrap around
+    uint8_t bitmask = 0;
+    if (dir) bitmask |= FLAG_PAGINATION_PAGE_UP;
+    if ((control->hw_id >= ENCODERS_COUNT) && (control->scale_points_flag & FLAG_SCALEPOINT_WRAP_AROUND)) bitmask |= FLAG_PAGINATION_WRAP_AROUND;
+
+    // insert the direction on buffer
+    i += int_to_str(bitmask, &buffer[i], sizeof(buffer) - i, 0);
+
+    // inserts one space
+    buffer[i++] = ' ';
+
+    if (dir) control->scale_point_index++;
+    else control->scale_point_index--;
+
+    // insert the index on buffer
+    i += int_to_str(control->scale_point_index, &buffer[i], sizeof(buffer) - i, 0);
+
+    uint16_t current_index = control->scale_point_index;
+    uint16_t current_step = control->step;
+
+    // sends the data to GUI
+    ui_comm_webgui_send(buffer, i);
+
+    // waits the pedalboards list be received
+    ui_comm_webgui_wait_response();
+
+    //encoder
+    if (hw_id < ENCODERS_COUNT) {
+        plugin_edit.controls[hw_id]->scale_point_index = current_index;
+        plugin_edit.controls[hw_id]->step = current_step;
+
+        //also set the control if needed
+        if (!g_list_click) {
+            step_to_value(plugin_edit.controls[hw_id]);
+            send_control_set(plugin_edit.controls[hw_id]);
+
+            //in case the user switches modes
+            clone_list_encoders(plugin_edit.controls[hw_id]);
+        }
+
+        //if screen overlay active, update that
+        if ((hardware_get_overlay_counter() || !plugin_edit.controls[hw_id]->scroll_dir) && (plugin_edit.current_overlay_control_index == plugin_edit.controls[hw_id]->hw_id)) {
+            BM_print_control_overlay(plugin_edit.controls[hw_id], ENCODER_LIST_TIMEOUT);
+            return;
+        }
+
+        // update the control screen
+        if (plugin_edit.current_overlay_control_index == -1)
+            screen_encoder(plugin_edit.controls[hw_id], hw_id);
+    }
+}
+
 /*
  * select a plugin from the list
  */
@@ -614,13 +708,53 @@ static void BM_inc_control(uint8_t encoder)
         //prepare display overlay
         BM_print_control_overlay(control, ENCODER_LIST_TIMEOUT);
 
-        /* we don't support paginated controls atm */
-        // increments the step
-        if ((control->step < (control->steps)) && (control->step < (control->scale_points_count))) {
-            control->scale_point_index++;
-            control->step++;
-        }  else {
-            return;
+        if (control->scale_points_flag & FLAG_SCALEPOINT_PAGINATED) {
+            // increments the step
+            if (control->step < (control->scale_points_count - 3)) {
+                if (control->scale_point_index >= control->steps)
+                    return;
+
+                control->step++;
+                control->scale_point_index++;
+            }
+            //we are at the end of our list ask for more data
+            else {
+                if ((control->scale_point_index >= control->steps - 2) ) {
+
+                    if (control->scale_point_index >= control->steps)
+                        return;
+
+                    control->step++;
+                    control->scale_point_index++;
+
+                    if (!g_list_click) {
+                        // converts the step to absolute value
+                        step_to_value(control);
+
+                        //make sure to save this value, in case the user switches mode
+                        clone_list_encoders(control);
+                    }
+
+                    // applies the control value
+                    control_set(encoder, control);
+                }
+                else if (control->scale_point_index < control->steps - 1) {
+                    //request new data, a new control we be assigned after
+                    request_control_page(control, 1);
+                }
+
+                //since a new control is assigned we can return
+                return;
+            }
+        }
+        else  {
+            // increments the step
+            if ((control->step < (control->steps)) && (control->step < (control->scale_points_count))) {
+                control->scale_point_index++;
+                control->step++;
+            }  else {
+                return;
+            }
         }
     }
     else if (control->properties & FLAG_CONTROL_TRIGGER) {
@@ -684,40 +818,39 @@ static void BM_dec_control(uint8_t encoder)
         //prepare display overlay
         BM_print_control_overlay(control, ENCODER_LIST_TIMEOUT);
 
-        // STILL DON'T SUPPORT THIS
-        // if (control->scale_points_flag & FLAG_SCALEPOINT_PAGINATED) {
-        //     // decrements the step
-        //     if (control->step > 2) {
-        //         control->step--;
-        //         control->scale_point_index--;
-        //     }
-        //     //we are at the end of our list ask for more data
-        //     else {
-        //         if ((control->scale_point_index <= 2) && (control->scale_point_index > 0)) {
-        //             control->step--;
-        //             control->scale_point_index--;
+        if (control->scale_points_flag & FLAG_SCALEPOINT_PAGINATED) {
+            // decrements the step
+            if (control->step > 2) {
+                control->step--;
+                control->scale_point_index--;
+            }
+            //we are at the end of our list ask for more data
+            else {
+                if ((control->scale_point_index <= 2) && (control->scale_point_index > 0)) {
+                    control->step--;
+                    control->scale_point_index--;
 
-        //             if (!g_list_click) {
-        //                 // converts the step to absolute value
-        //                 step_to_value(control);
+                    if (!g_list_click) {
+                        // converts the step to absolute value
+                        step_to_value(control);
 
-        //                 //make sure to save this value, in case the user switches mode
-        //                 clone_list_encoders(control);
-        //             }
+                        //make sure to save this value, in case the user switches mode
+                        clone_list_encoders(control);
+                    }
 
-        //             // applies the control value
-        //             control_set(encoder, control);
-        //         }
-        //         else if (control->scale_point_index > 0) {
-        //             //request new data, a new control we be assigned after
-        //             //request_control_page(control, 0);
-        //         }
+                    // applies the control value
+                    control_set(encoder, control);
+                }
+                else if (control->scale_point_index > 0) {
+                    //request new data, a new control we be assigned after
+                    request_control_page(control, 0);
+                }
 
-        //         //since a new control is assigned we can return
-        //         return;
-        //     }
-        // }
-        // else {
+                //since a new control is assigned we can return
+                return;
+            }
+        }
+        else {
             // decrements the step
             if (control->step > 0) {
                 control->scale_point_index--;
@@ -727,7 +860,7 @@ static void BM_dec_control(uint8_t encoder)
             {
                 return;
             }
-        //}
+        }
     }
     else if (control->properties & FLAG_CONTROL_TRIGGER) {
         control->value = control->maximum;
