@@ -990,15 +990,25 @@ void BM_clear(void)
 {
 }
 
+
 /*
  * Called on builder mode enter
  */
-void BM_set_state(void)
+void BM_enter(void)
 {
     uiState = PLUGIN_SELECT;
     g_current_plugin = 0;
     g_selected_plugin = 0;
     request_plugins(PAGE_DIR_INIT);
+    BM_set_state();
+}
+
+
+/*
+ * Called on builder activate (eg. from menu-shift button)
+ */
+void BM_set_state(void)
+{
     //CM_set_leds();
     BM_print_screen();
 }

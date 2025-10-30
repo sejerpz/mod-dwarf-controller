@@ -60,6 +60,9 @@
 //uint8_t tool_mode_has_tool_enabled(uint8_t display);
 void BM_init(void);
 void BM_clear(void);
+// called when builder mode is activated
+void BM_enter(void);
+// called when builder node should refresh state (e.g. when returning from shift menu)
 void BM_set_state(void);
 void BM_encoder_click(uint8_t encoder);
 void BM_up(uint8_t encoder);

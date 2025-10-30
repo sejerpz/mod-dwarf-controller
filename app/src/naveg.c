@@ -229,7 +229,8 @@ void exit_shift_menu(void)
         break;
 
         case MODE_BUILDER:
-            //not defined yet
+            g_device_mode = MODE_BUILDER;
+            BM_set_state();
         break;
 
         case MODE_SELFTEST:
@@ -1130,7 +1131,8 @@ void naveg_button_pressed(uint8_t button)
                             break;
 
                             case MODE_BUILDER:
-                                //not defined yet
+                                g_device_mode = MODE_BUILDER;
+                                BM_set_state();
                             break;
                         }
                     }
@@ -1141,10 +1143,21 @@ void naveg_button_pressed(uint8_t button)
 
                 //TODO enter builder mode
                 case 2:
-                    // close the shitf menu
-                    exit_shift_menu();
-                    naveg_shift_pressed();
-                    naveg_trigger_mode_change(MODE_BUILDER);
+                    shift_mode_active = false;
+                    if (g_prev_shift_device_mode != MODE_BUILDER)
+                    {
+                        // close the shift menu
+                        // exit_shift_menu();
+                        // naveg_shift_pressed();
+                        // naveg_trigger_mode_change(MODE_BUILDER);
+                        g_device_mode = MODE_BUILDER;
+                        BM_enter();
+                    }
+                    else
+                    {
+                        g_device_mode = MODE_CONTROL;
+                        CM_set_state();
+                    }
                 break;
             }
         break;
@@ -1345,7 +1358,7 @@ void naveg_trigger_mode_change(uint8_t mode)
         break;
 
         case MODE_BUILDER:
-            BM_set_state();
+            BM_enter();
         break;
 
         case MODE_SELFTEST:

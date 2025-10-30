@@ -1566,11 +1566,10 @@ void screen_shift_overlay(int8_t prev_mode, int16_t *item_ids, uint8_t ui_connec
     if (previous_mode == MODE_TOOL_MENU)
         glcd_rect_invert(display, 49, DISPLAY_HEIGHT - 8, 30, 8);
 
-    //draw the third box only if we are not already in that mode, BUILDER MODE
-    if (naveg_get_current_mode() != MODE_BUILDER)
-    {
-        glcd_text(display, 90, DISPLAY_HEIGHT - 7, "EDIT", Terminal3x5, GLCD_BLACK);
-    }
+    //draw the third box, menu/builder mode
+    glcd_text(display, 90, DISPLAY_HEIGHT - 7, "EDIT", Terminal3x5, GLCD_BLACK);
+    if (previous_mode == MODE_BUILDER)
+        glcd_rect_invert(display, 83, DISPLAY_HEIGHT - 8, 30, 8);
 
     //print the 3 quick controls
     for (i = 0; i < 3; i++)
