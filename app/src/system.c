@@ -26,6 +26,8 @@
 #include "mode_control.h"
 #include "naveg.h"
 
+#include "logging.h"
+
 /*
 ************************************************************************************************************************
 *           LOCAL DEFINES
@@ -115,6 +117,7 @@ int8_t g_control_header = -1;
 int8_t g_usb_mode = -1;
 int8_t g_noise_removal_mode = -1;
 int8_t g_shift_mode = -1;
+int16_t g_audio_frame_size = -1;
 
 /*
 ************************************************************************************************************************
@@ -2375,5 +2378,86 @@ void system_noise_removal_cb(void *arg, int event)
     {
         case 0: item->data.unit_text = "OFF"; break;
         case 1: item->data.unit_text = "ON"; break;
+    }
+}
+
+
+void system_audio_frame_size_cb(void *arg, int event)
+{
+    menu_item_t *item = arg;
+    char buffer[10];
+    uint8_t i;
+
+    // setting the defaults
+    item->data.step = AUDIO_FRAME_STEP;
+    item->data.min = AUDIO_FRAME_MIN;
+    item->data.max = AUDIO_FRAME_MAX;
+    item->data.list_count = 2;
+    item->data.hover = 1;
+
+    if (g_audio_frame_size == -1)
+    {
+        //ask host for current value
+        ui_comm_webgui_set_response_cb(recieve_sys_value, item);
+        i = copy_command(buffer, CMD_AUDIO_FRAME_SIZE);
+        i += int_to_str(0, &buffer[i], sizeof(buffer) - 4, 0);
+        buffer[i] = 0;
+
+        // send the data to GUI
+        ui_comm_webgui_send(buffer, i);
+
+        // waits for the response
+        ui_comm_webgui_wait_response();
+
+        g_audio_frame_size = (int)item->data.value;
+        item->data.selected = g_audio_frame_size;
+    }
+
+    if (event == MENU_EV_ENTER)
+    {
+        if (g_audio_frame_size < AUDIO_FRAME_MAX) g_audio_frame_size += item->data.step;
+        else g_audio_frame_size = AUDIO_FRAME_MIN;
+    }
+    else if (event == MENU_EV_UP)
+    {
+        if (g_audio_frame_size < AUDIO_FRAME_MAX)
+            g_audio_frame_size += item->data.step;
+    }
+    else if (event == MENU_EV_DOWN)
+    {
+        if (g_audio_frame_size > AUDIO_FRAME_MIN)
+            g_audio_frame_size -= item->data.step;
+    }
+    else if (event == MENU_EV_NONE)
+    {
+        //only display value
+        item->data.value = g_audio_frame_size;
+        item->data.min = AUDIO_FRAME_MIN;
+        item->data.max = AUDIO_FRAME_MAX;
+    }
+
+    if (event != MENU_EV_NONE)
+    {
+        // SEND new value to host
+        item->data.value = g_audio_frame_size;
+        i = copy_command(buffer, CMD_AUDIO_FRAME_SIZE);
+        i += int_to_str(item->data.value, &buffer[i], sizeof(buffer) - 4, 0);
+        buffer[i] = 0;
+
+        ui_comm_webgui_set_response_cb(recieve_sys_value, item);
+
+        // send the data to GUI
+        ui_comm_webgui_send(buffer, i);
+
+        // waits for the response
+        ui_comm_webgui_wait_response();
+
+        g_audio_frame_size = (int)item->data.value;
+    }
+
+    switch ((int)item->data.value)
+    {
+        case 128: item->data.unit_text = "128"; break;
+        case 256: item->data.unit_text = "256"; break;
     }
 }

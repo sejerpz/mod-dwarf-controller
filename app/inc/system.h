@@ -96,6 +96,7 @@ void system_hide_actuator_cb(void *arg, int event);
 void system_usb_mode_cb(void *arg, int event);
 void system_shift_mode_cb(void *arg, int event);
 void system_noise_removal_cb(void *arg, int event);
+void system_audio_frame_size_cb(void *arg, int event);
 
 //system plugins
 void system_noisegate_channel_cb(void *arg, int event);

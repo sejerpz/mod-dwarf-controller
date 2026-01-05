@@ -50,6 +50,10 @@ enum {MENU_EV_ENTER, MENU_EV_UP, MENU_EV_DOWN, MENU_EV_NONE};
 #define TUNER_REFERENCE_FREQ_MAX     453
 #define TUNER_REFERENCE_FREQ_DEFAULT 440
 
+#define AUDIO_FRAME_MIN      128
+#define AUDIO_FRAME_MAX      256
+#define AUDIO_FRAME_STEP     128
+
 /*
 ************************************************************************************************************************
 *           DATA TYPES

@@ -270,6 +270,7 @@ enum {ENCODER0, ENCODER1, ENCODER2, FOOTSWITCH0, FOOTSWITCH1, FOOTSWITCH2, BUTTO
 
 #define USB_MODE_ID             SYSTEM_SET_ID+1
 #define NOSIE_REMOVAL_ID        SYSTEM_SET_ID+2
+#define AUDIO_FRAME_SIZE_ID     SYSTEM_SET_ID+3
 
 #define CONTROL_HEADER_ID       APPEARANCE_SET_ID+1
 #define UNASSIGNED_ACTUATRS_ID  APPEARANCE_SET_ID+2
@@ -329,6 +330,7 @@ enum {ENCODER0, ENCODER1, ENCODER2, FOOTSWITCH0, FOOTSWITCH1, FOOTSWITCH2, BUTTO
     {"SYSTEM BEHAVIOR",                 MENU_MAIN,      SYSTEM_SET_ID,          ROOT_ID,            NULL                        , 0},  \
     {"USB-B MODE",                      MENU_CLICK_LIST,USB_MODE_ID,            SYSTEM_SET_ID,      system_usb_mode_cb          , 0},  \
     {"COMPENSATE GND LOOP",             MENU_CLICK_LIST,NOSIE_REMOVAL_ID,       SYSTEM_SET_ID,      system_noise_removal_cb     , 0},  \
+    {"AUDIO FRAME SIZE",                MENU_LIST,      AUDIO_FRAME_SIZE_ID,    SYSTEM_SET_ID,      system_audio_frame_size_cb  , 0},  \
     {"CONTROLLER BEHAVIOR",             MENU_MAIN,      CONTROLLER_SET_ID,      ROOT_ID,            NULL                        , 0},  \
     {"DEFAULT TOOL",                    MENU_LIST,      DEFAULT_TOOL_ID,        CONTROLLER_SET_ID,  system_default_tool_cb      , 0},  \
     {"MENU BUTTON MODE",                MENU_LIST,      MENU_BUTTON_TOGGLE_ID,  CONTROLLER_SET_ID,  system_shift_mode_cb        , 0},  \
