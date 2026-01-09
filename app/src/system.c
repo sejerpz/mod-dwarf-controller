@@ -210,6 +210,15 @@ static void set_menu_item_value(uint16_t menu_id, uint16_t value)
     ui_comm_webgui_send(buffer, i);
 }
 
+static void recieve_web_value(void *data, menu_item_t *item)
+{
+    char **values = data;
+
+    //protocol ok is 1 and not 0
+    if (atoi(values[1]) == 1)
+        item->data.value = atof(values[2]);
+}
+
 static void recieve_sys_value(void *data, menu_item_t *item)
 {
     char **values = data;
@@ -2394,18 +2403,19 @@ void system_audio_frame_size_cb(void *arg, int event)
     item->data.max = AUDIO_FRAME_MAX;
     item->data.list_count = 2;
     item->data.hover = 1;
+    item->data.value = g_audio_frame_size;
 
     if (g_audio_frame_size == -1)
     {
+        item->data.value = 0; // ensure value is 0
         //ask host for current value
-        ui_comm_webgui_set_response_cb(recieve_sys_value, item);
         i = copy_command(buffer, CMD_AUDIO_FRAME_SIZE);
         i += int_to_str(0, &buffer[i], sizeof(buffer) - 4, 0);
         buffer[i] = 0;
 
         // send the data to GUI
+        ui_comm_webgui_set_response_cb(recieve_web_value, item);
         ui_comm_webgui_send(buffer, i);
-
         // waits for the response
         ui_comm_webgui_wait_response();
 
@@ -2432,8 +2442,6 @@ void system_audio_frame_size_cb(void *arg, int event)
     {
         //only display value
         item->data.value = g_audio_frame_size;
-        item->data.min = AUDIO_FRAME_MIN;
-        item->data.max = AUDIO_FRAME_MAX;
     }
 
     if (event != MENU_EV_NONE)
@@ -2444,7 +2452,7 @@ void system_audio_frame_size_cb(void *arg, int event)
         i += int_to_str(item->data.value, &buffer[i], sizeof(buffer) - 4, 0);
         buffer[i] = 0;
 
-        ui_comm_webgui_set_response_cb(recieve_sys_value, item);
+        ui_comm_webgui_set_response_cb(recieve_web_value, item);
 
         // send the data to GUI
         ui_comm_webgui_send(buffer, i);
@@ -2459,5 +2467,6 @@ void system_audio_frame_size_cb(void *arg, int event)
     {
         case 128: item->data.unit_text = "128"; break;
         case 256: item->data.unit_text = "256"; break;
+        default: item->data.unit_text = ":("; break;
     }
 }
