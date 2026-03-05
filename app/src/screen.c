@@ -395,6 +395,8 @@ void screen_group_foots(uint8_t toggle)
 
 void screen_encoder(const control_t *control, uint8_t encoder)
 {    
+    static char buffer_8[8 + 1];
+    static char *labels_list[64];
     glcd_t *display = hardware_glcds(0);
 
     //fist decide posistion
@@ -454,21 +456,18 @@ void screen_encoder(const control_t *control, uint8_t encoder)
         char_cnt_name = 8;
     }
 
-    char *title_str_bfr = (char *) MALLOC((char_cnt_name + 1) * sizeof(char));
-    strncpy(title_str_bfr, control->label, char_cnt_name);
-    title_str_bfr[char_cnt_name] = '\0';
+    //char *title_str_bfr = (char *) MALLOC((char_cnt_name + 1) * sizeof(char));
+    strncpy(buffer_8, control->label, 8);
+    buffer_8[char_cnt_name] = '\0';
 
     //allign to middle, (full width / 2) - (text width / 2)
-    glcd_text(display, (encoder_x + 18 - 2*char_cnt_name), encoder_y, title_str_bfr, Terminal3x5, GLCD_BLACK);
-
-    FREE(title_str_bfr);
-
+    glcd_text(display, (encoder_x + 18 - 2*char_cnt_name), encoder_y, buffer_8, Terminal3x5, GLCD_BLACK);
     // list type control
     if (control->properties & (FLAG_CONTROL_ENUMERATION | FLAG_CONTROL_SCALE_POINTS))
     {
         uint8_t scalepoint_count_local = control->scale_points_count > 64 ? 64 : control->scale_points_count;
 
-        char **labels_list = MALLOC(sizeof(char*) * scalepoint_count_local);
+        //char **labels_list = MALLOC(sizeof(char*) * scalepoint_count_local);
 
         uint8_t i;
         for (i = 0; i < scalepoint_count_local; i++)
@@ -493,7 +492,7 @@ void screen_encoder(const control_t *control, uint8_t encoder)
         list.text_left_margin = 1;
         widget_list_value(display, &list);
 
-        FREE(labels_list);
+        //FREE(labels_list);
     }
     else if ((control->properties & FLAG_CONTROL_TRIGGER) && (floats_are_equal(control->screen_indicator_widget_val, -1.f)))
     {
@@ -566,14 +565,14 @@ void screen_encoder(const control_t *control, uint8_t encoder)
             if (char_cnt_value > 8)
                 char_cnt_value = 8;
 
-            char *value_str_bfr = (char *) MALLOC((char_cnt_value + 1) * sizeof(char));
-            strncpy(value_str_bfr, control->value_string, char_cnt_value);
-            value_str_bfr[char_cnt_value] = '\0';
-            bar.value = value_str_bfr;
+            //char *value_str_bfr = (char *) MALLOC((char_cnt_value + 1) * sizeof(char));
+            strncpy(buffer_8, control->value_string, 8);
+            buffer_8[char_cnt_value] = '\0';
+            bar.value = buffer_8;
 
             widget_bar_encoder(display, &bar);
 
-            FREE(value_str_bfr);
+            //FREE(value_str_bfr);
         }
 
         //check what to do with the unit
@@ -587,13 +586,13 @@ void screen_encoder(const control_t *control, uint8_t encoder)
                 char_cnt_unit = 7;
             }
 
-            char *unit_str_bfr = (char *) MALLOC((char_cnt_unit + 1) * sizeof(char));
-            strncpy(unit_str_bfr, control->unit, char_cnt_unit);
-            unit_str_bfr[char_cnt_unit] = '\0';
+            //char *unit_str_bfr = (char *) MALLOC((char_cnt_unit + 1) * sizeof(char));
+            strncpy(buffer_8, control->unit, 7);
+            buffer_8[char_cnt_unit] = '\0';
 
-            glcd_text(display, (encoder_x + 18 - 2*char_cnt_unit), encoder_y + 12 + 7, unit_str_bfr, Terminal3x5, GLCD_BLACK);
+            glcd_text(display, (encoder_x + 18 - 2*char_cnt_unit), encoder_y + 12 + 7, buffer_8, Terminal3x5, GLCD_BLACK);
 
-            FREE(unit_str_bfr);
+            //FREE(unit_str_bfr);
             return;
         }
     }
