@@ -186,21 +186,16 @@ static void encoder_control_rm(uint8_t hw_id)
 {
     if (hw_id > ENCODERS_COUNT) return;
 
-    // if ((!plugin_edit.controls[hw_id]) && (naveg_get_current_mode() == MODE_BUILDER))
-    // {
-    //     if (hardware_get_overlay_counter() == 0)
-    //         screen_encoder(NULL, hw_id);
-    //     return;
-    // }
-
-
-    control_t *control = plugin_edit.controls[hw_id];
-
-    if (control)
+    if (naveg_get_current_mode() == MODE_BUILDER) 
     {
-        plugin_edit.controls[hw_id] = NULL;
-        data_free_control(control);
-        if ((naveg_get_current_mode() == MODE_BUILDER) && (hardware_get_overlay_counter() == 0))
+        control_t *control = plugin_edit.controls[hw_id];
+
+        if (control)
+        {
+            plugin_edit.controls[hw_id] = NULL;
+            data_free_control(control);
+        }
+        if (hardware_get_overlay_counter() == 0)
             screen_encoder(NULL, hw_id);
     }
 }
@@ -312,7 +307,7 @@ static void clone_list_encoders(control_t *control)
 
     // free the navigation pedalboads list
     if (g_plugins)
-        data_free_snapshots_list(g_plugins);
+        data_free_plugins_list(g_plugins);
 
     // parses the list
     g_plugins = data_parse_plugins_list(&list[5], count);
