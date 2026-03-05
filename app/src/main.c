@@ -6,6 +6,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 #include "FreeRTOS.h"
 #include "task.h"
@@ -28,6 +29,7 @@
 #include "uc1701.h"
 #include "mode_navigation.h"
 #include "mode_tools.h"
+#include "LPC177x_8x.h"
 
 /*
 ************************************************************************************************************************
@@ -496,12 +498,86 @@ void reset_queue(void)
 ************************************************************************************************************************
 */
 
-// TODO: better error feedback for below functions
+void AnalyzeHardFault(uint32_t *pulFaultStackAddress) {
+    static char buffer[128];
 
+    glcd_t *glcd0 =  hardware_glcds(0);
+    glcd_clear(glcd0, GLCD_WHITE);
+    glcd_text(glcd0, 0, 0, "MOD Meditation: HardFault", NULL, GLCD_BLACK);
+    // Registri salvati nello stack al momento del fault
+    //uint32_t r0  = pulFaultStackAddress[0];
+    //uint32_t r1  = pulFaultStackAddress[1];
+    uint32_t lr  = pulFaultStackAddress[5];
+    uint32_t pc  = pulFaultStackAddress[6];
+    uint32_t psr = pulFaultStackAddress[7];
+
+    // Leggi i registri di stato del sistema
+    uint32_t _HFSR = SCB->HFSR;
+    uint32_t _CFSR = SCB->CFSR;
+    uint32_t _MMAR = SCB->MMFAR; // MemManage Fault Address
+    uint32_t _BFAR = SCB->BFAR;  // Bus Fault Address
+
+    // Analisi del HFSR
+    strcpy(buffer, "PC:  0x");
+    int_to_hex_str(pc, buffer + strlen(buffer));
+    glcd_text(glcd0, 0, 15, buffer, NULL, GLCD_BLACK);
+
+    strcpy(buffer, "PSR: 0x");
+    int_to_hex_str(psr, buffer + strlen(buffer));
+    glcd_text(glcd0, 0, 25, buffer, NULL, GLCD_BLACK);
+
+    strcpy(buffer, "LR:  0x");
+    int_to_hex_str(lr, buffer + strlen(buffer));
+    glcd_text(glcd0, 0, 35, buffer, NULL, GLCD_BLACK);
+    glcd_update(glcd0);
+
+    if (_HFSR & (1u << 30)) {
+        // Analisi del CFSR (diviso in 3 parti: Usage, Bus, Mem)
+        // 1. Bus Fault (Errori hardware/periferiche)
+        if (_CFSR & 0x0000FF00) {
+            if (_CFSR & (1 << 15))  {
+                strcpy(buffer, "Bus fault address: 0x");
+                int_to_hex_str(_BFAR, buffer + strlen(buffer));
+                glcd_text(glcd0, 0, 45, buffer, NULL, GLCD_BLACK);
+            }
+        }
+
+        // 2. MemManage Fault (Violazioni MPU)
+        if (_CFSR & 0x000000FF) {
+            if (_CFSR & (1 << 7)) {
+                strcpy(buffer, "MemManage fault: 0x");
+                int_to_hex_str(_MMAR, buffer + strlen(buffer));
+            } else {
+                strcpy(buffer, "MemManage fault");
+            }
+            glcd_text(glcd0, 0, 55, buffer, NULL, GLCD_BLACK);
+        }
+
+        // 3. Usage Fault (Errori software)
+        if (_CFSR & 0xFFFF0000) {
+            strcpy(buffer, "Usage fault: None");
+            if (_CFSR & (1 << 25)) strcpy(buffer, "Div by zero");
+            if (_CFSR & (1 << 24)) strcpy(buffer, "Unaligned access");
+            if (_CFSR & (1 << 18)) strcpy(buffer, "Undefined instruction");
+            glcd_text(glcd0, 0, 65, buffer, NULL, GLCD_BLACK);
+        }
+    }
+
+    if (_HFSR & (1u << 31)) {
+        glcd_text(glcd0, 0, 70, "Debug event", NULL, GLCD_BLACK);
+    }
+    glcd_update(glcd0);
+}
+
+// TODO: better error feedback for below functions
 void HardFault_Handler(void)
 {
-    ledz_on(hardware_leds(0), MAGENTA);
+    ledz_on(hardware_leds(0), RED);
     hardware_glcd_brightness(MAX_BRIGHTNESS);
+    // analyze the cause of the hard fault and print it on the display
+    // use __get_MSP() for the main stack pointer (MSP) 
+    // and __get_PSP() for the process stack pointer (PSP)
+    AnalyzeHardFault((uint32_t *) __get_PSP());
     while (1);
 }
 
@@ -511,28 +587,29 @@ void MemManage_Handler(void)
     while (1);
 }
 
+
 void BusFault_Handler(void)
 {
-    ledz_on(hardware_leds(2), MAGENTA);
+    ledz_on(hardware_leds(2), YELLOW);
     while (1);
 }
 
 void UsageFault_Handler(void)
 {
-    ledz_on(hardware_leds(3), MAGENTA);
+    ledz_on(hardware_leds(3), GREEN);
     while (1);
 }
 
 void vApplicationMallocFailedHook(void)
 {
-    ledz_on(hardware_leds(4), MAGENTA);
+    ledz_on(hardware_leds(4), BLUE);
     while (1);
 }
 
 void vApplicationIdleHook(void)
 {
     //should not reach here, however this should also not include the while(1)
-    ledz_on(hardware_leds(6), MAGENTA);
+    ledz_on(hardware_leds(6), WHITE);
     while (1);
 }
 
