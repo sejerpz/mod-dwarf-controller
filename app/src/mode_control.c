@@ -606,6 +606,9 @@ static void parse_control_page(void *data, menu_item_t *item)
 
     control_t *control = data_parse_control(&list[1]);
 
+    if (!control)
+        return; // something went wrong with parsing, dont update anything
+
     // first tries remove the control
     if (control->hw_id < 3)
         encoder_control_rm(control->hw_id);
