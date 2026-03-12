@@ -23,6 +23,7 @@
 *           LOCAL DEFINES
 ************************************************************************************************************************
 */
+#define UNUSED_PARAM(var)   do { (void)(var); } while (0)
 
 //Timer 0 LEDS + Display backlight
 #define TIMER0_PRIORITY     4
@@ -816,6 +817,7 @@ void hardware_enable_device_IRQS(void)
 
 glcd_t *hardware_glcds(uint8_t glcd_id)
 {
+    UNUSED_PARAM(glcd_id);
     return &g_glcd;
 }
 
