@@ -33,6 +33,10 @@
 #include "memory_map.h"
 #include "logging.h"
 
+#ifndef VERSION_HASH
+#define VERSION_HASH 'custom'
+#endif
+
 /*
 ************************************************************************************************************************
 *           LOCAL DEFINES
