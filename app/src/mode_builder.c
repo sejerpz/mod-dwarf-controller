@@ -467,7 +467,10 @@ static void request_current_page_controls(void)
     for(uint8_t i = 0; i < ENCODERS_COUNT; i++) {
         encoder_control_rm(i);
     }
-    request_plugin_controls(plugin_edit.plugin_uid, start_index, count);
+
+    if (plugin_edit.controls_count > 0) {
+        request_plugin_controls(plugin_edit.plugin_uid, start_index, count);
+    }
 }
 
 
@@ -580,8 +583,10 @@ static void list_select_plugin(uint8_t index)
     plugin_edit.controls_count = 0;
     // request plugin controls count
     request_plugin_controls(plugin_edit.plugin_uid, 0, 0);
-    if (plugin_edit.controls_count > 0)
-        request_plugin_controls(plugin_edit.plugin_uid, 0, plugin_edit.controls_count > ENCODERS_COUNT ? ENCODERS_COUNT : plugin_edit.controls_count);
+    if (plugin_edit.controls_count > 0) {
+        // request the first controls page
+        request_current_page_controls();
+    }
 }
 
 static void send_control_set(control_t *control)
@@ -1100,8 +1105,8 @@ void BM_button_pressed(uint8_t button)
             if (uiState == PLUGIN_EDIT) {
                 if (plugin_edit.current_page > 0) {
                     plugin_edit.current_page--;
-                    request_current_page_controls();
                     BM_print_screen();
+                    request_current_page_controls();
                 }
             }
         break;
