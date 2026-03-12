@@ -4,6 +4,8 @@ PRJNAME = mod-dwarf-controller
 # toolchain configuration
 TOOLCHAIN_PREFIX = arm-none-eabi-
 
+# Get the short Git hash
+GIT_HASH := $(shell git rev-parse --short=8 HEAD)
 
 # Config
 # ENABLE_DEBUG_TRACE
@@ -85,13 +87,18 @@ CFLAGS += -Wa,-adhlns=$(addprefix $(OUT_DIR)/, $(notdir $(addsuffix .lst, $(base
 CFLAGS += -MMD -MP -MF $(OUT_DIR)/dep/$(@F).d
 CFLAGS += -I. $(patsubst %,-I%,$(INC))
 CFLAGS += -D$(CPU_SERIE)
+CFLAGS += -DVERSION_HASH=\"v.$(GIT_HASH)\"
 ifneq ($(ENABLE_DEBUG_TRACE),)
 CFLAGS += -DENABLE_DEBUG_TRACE
 endif
 CFLAGS += -O2
+CFLAGS += -g
+
 
 # Linker flags
 LDFLAGS = -Wl,-Map=$(OUT_DIR)/$(PRJNAME).map,--cref
+
+
 ifeq ($(CCC_ANALYZER_OUTPUT_FORMAT),)
 LDFLAGS += -specs=rdimon.specs
 LDFLAGS += -Wl,--start-group -lgcc -lc -lm -lrdimon -Wl,--end-group
@@ -106,12 +113,14 @@ OBJCOPY = $(TOOLCHAIN_PREFIX)objcopy
 OBJDUMP = $(TOOLCHAIN_PREFIX)objdump
 NM      = $(TOOLCHAIN_PREFIX)nm
 SIZE    = $(TOOLCHAIN_PREFIX)size
+STRIP   = $(TOOLCHAIN_PREFIX)strip
 
 # define the output files
 ELF = $(OUT_DIR)/$(PRJNAME).elf
 BIN = $(OUT_DIR)/$(PRJNAME).bin
 HEX = $(OUT_DIR)/$(PRJNAME).hex
 SYM = $(OUT_DIR)/$(PRJNAME).sym
+DBG_SYM = $(OUT_DIR)/$(PRJNAME).dbg
 LSS = $(OUT_DIR)/$(PRJNAME).lss
 
 # Colors definitions
@@ -129,7 +138,7 @@ endif
 moddwarf: all
 
 ifeq ($(CCC_ANALYZER_OUTPUT_FORMAT),)
-build: elf lss sym hex bin
+build: elf lss sym dbg_sym hex bin
 else
 build: elf
 endif
@@ -137,6 +146,7 @@ endif
 # output files
 elf: $(OUT_DIR)/$(PRJNAME).elf
 lss: $(OUT_DIR)/$(PRJNAME).lss
+dbg_sym: $(OUT_DIR)/$(PRJNAME).dbg
 sym: $(OUT_DIR)/$(PRJNAME).sym
 hex: $(OUT_DIR)/$(PRJNAME).hex
 bin: $(OUT_DIR)/$(PRJNAME).bin
@@ -171,6 +181,12 @@ $(LSS): $(ELF)
 $(SYM): $(ELF)
 	@echo -e ${GREEN}Creating symbols table${NOCOLOR}
 	@$(NM) -n $< > $@
+
+$(DBG_SYM): $(ELF)
+	@echo -e ${GREEN}Extracting debug symbols${NOCOLOR}
+	@$(OBJCOPY) --only-keep-debug $< $@
+	@echo -e ${GREEN}Stripping elf firmware file${NOCOLOR}
+	@$(STRIP) --strip-debug --strip-unneeded $<
 
 # Link: create ELF output file from object files.
 $(ELF): $(OBJ)
