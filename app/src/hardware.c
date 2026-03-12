@@ -16,6 +16,8 @@
 #include "st7565p.h"
 #include "naveg.h"
 #include "logging.h"
+#include "memory_map.h"
+
 /*
 ************************************************************************************************************************
 *           LOCAL DEFINES
@@ -39,11 +41,12 @@
 
 //// Dynamic menory allocation
 // defines the heap size
-const HeapRegion_t xHeapRegions[] =
-{
-    { ( uint8_t * ) 0x10006000, 0x2000 },
-    { ( uint8_t * ) 0x20000000, 0x8000 },
-    { NULL, 0 } /* Terminates the array. */
+HeapRegion_t xHeapRegions[] = {
+    //{ ( uint8_t * ) 0x10006000, 0x2000 }, // original values
+    { (uint8_t *) 0x10005000, 0x4000 }, // these values are updated using linker variables in hardware_setup
+    { (uint8_t *) 0x20000000, 0x8000 }, // 32KB SRAM0
+    { NULL, 0 },
+    { NULL, 0 },
 };
 
 static const int *LED_PINS[]  = {
@@ -443,6 +446,11 @@ void hardware_setup(void)
 
     // configure the peripherals power
     CLKPWR_ConfigPPWR(HW_CLK_PWR_CONTROL, ENABLE);
+
+    size_t xHeapSize = (size_t)(_pvHeapEnd - _pvHeapStart);
+
+    xHeapRegions[0].pucStartAddress = (uint8_t *)_pvHeapStart;
+    xHeapRegions[0].xSizeInBytes    = (size_t)xHeapSize;
 
     //Pass the array into vPortDefineHeapRegions().
     vPortDefineHeapRegions(xHeapRegions);

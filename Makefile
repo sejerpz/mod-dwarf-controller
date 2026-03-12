@@ -9,6 +9,8 @@ GIT_HASH := $(shell git rev-parse --short=8 HEAD)
 
 # Config
 # ENABLE_DEBUG_TRACE
+# Enable SEMIHOST debug: librdimon
+# ENABLE_SEMIHOST
 
 ifeq ($(CCC_ANALYZER_OUTPUT_FORMAT),)
 # cpu configuration
@@ -88,6 +90,9 @@ CFLAGS += -MMD -MP -MF $(OUT_DIR)/dep/$(@F).d
 CFLAGS += -I. $(patsubst %,-I%,$(INC))
 CFLAGS += -D$(CPU_SERIE)
 CFLAGS += -DVERSION_HASH=\"v.$(GIT_HASH)\"
+ifneq ($(ENABLE_SEMIHOST),)
+CFLAGS += -DENABLE_SEMIHOST
+endif
 ifneq ($(ENABLE_DEBUG_TRACE),)
 CFLAGS += -DENABLE_DEBUG_TRACE
 endif
@@ -100,8 +105,16 @@ LDFLAGS = -Wl,-Map=$(OUT_DIR)/$(PRJNAME).map,--cref
 
 
 ifeq ($(CCC_ANALYZER_OUTPUT_FORMAT),)
-LDFLAGS += -specs=rdimon.specs
-LDFLAGS += -Wl,--start-group -lgcc -lc -lm -lrdimon -Wl,--end-group
+
+ifeq ($(ENABLE_SEMIHOST),)
+# semihosting debugger support
+LDFLAGS += -specs=nano.specs -specs=nosys.specs
+else
+LDFLAGS += -specs=rdimon.specs -lrdimon
+endif
+
+# common ldflags
+LDFLAGS += -Wl,--start-group -lgcc -lc -lm -Wl,--end-group
 LDFLAGS += -T./link/LPC.ld
 else
 LDFLAGS += -lm

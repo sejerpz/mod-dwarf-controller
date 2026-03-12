@@ -119,7 +119,7 @@ SECTIONS
     	*(.noinit.$SRAM0*)
        . = ALIGN(4) ;
     } > SRAM0 
-    
+
     /* DEFAULT NOINIT SECTION */
     .noinit (NOLOAD): ALIGN(4)
     {
@@ -129,6 +129,26 @@ SECTIONS
         _end_noinit = .;
     } > SRAM
     
-    PROVIDE(_pvHeapStart = .);
+    /* * HEAP AND STACK CONFIGURATION
+     */
+
     PROVIDE(_vStackTop = __top_SRAM - 0);
+    PROVIDE(__stack_size = 8K);
+
+    /* Force 16-byte alignment for the start of the heap to prevent Usage Faults */
+    . = ALIGN(8);
+    PROVIDE(_pvHeapStart = .);
+
+    /* Calculate the top of SRAM0 (0x10010000) */
+    __top_SRAM = ORIGIN(SRAM) + LENGTH(SRAM);
+
+    /* * Define the end of the heap by subtracting the stack size from the top of RAM.
+     * This ensures the stack has its reserved space at the very end of RAM.
+     */
+    PROVIDE(_pvHeapEnd = __top_SRAM - __stack_size);
+
+    /* * Safety check: Ensure that BSS + NoInit + Stack do not exceed available RAM.
+     * If this fails, the linker will throw an error during compilation.
+     */
+    ASSERT(_pvHeapStart < _pvHeapEnd, "Region SRAM overflowed: Not enough space for Heap and Stack")
 }
