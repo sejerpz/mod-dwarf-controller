@@ -179,6 +179,10 @@ static void encoder_control_add(control_t *control)
         if (plugin_edit.current_overlay_control_index == -1)
             screen_encoder(control, control->hw_id);
     }
+    else
+    {
+        trace("not builder mode");
+    }
 }
 
 // control removed from display
@@ -194,9 +198,14 @@ static void encoder_control_rm(uint8_t hw_id)
         {
             plugin_edit.controls[hw_id] = NULL;
             data_free_control(control);
+
         }
         if (hardware_get_overlay_counter() == 0)
             screen_encoder(NULL, hw_id);
+    }
+    else
+    {
+        trace("not builder mode");
     }
 }
 
