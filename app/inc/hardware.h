@@ -88,7 +88,7 @@ void hardware_eneble_serial_interupt(uint8_t serial_port);
 //enable IRQs related to device operations
 void hardware_enable_device_IRQS(void);
 // returns the glcd object relative to glcd id
-glcd_t *hardware_glcds();
+glcd_t *hardware_glcds(uint8_t glcd_id);
 void hardware_glcd_brightness(int level);
 // returns the led object relative to led id
 ledz_t *hardware_leds(uint8_t led_id);

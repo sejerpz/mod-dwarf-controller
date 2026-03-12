@@ -814,7 +814,7 @@ void hardware_enable_device_IRQS(void)
     TIM_Cmd(LPC_TIM3, ENABLE);
 }
 
-glcd_t *hardware_glcds()
+glcd_t *hardware_glcds(uint8_t glcd_id)
 {
     return &g_glcd;
 }
