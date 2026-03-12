@@ -456,9 +456,8 @@ void screen_encoder(const control_t *control, uint8_t encoder)
         char_cnt_name = 8;
     }
 
-    //char *title_str_bfr = (char *) MALLOC((char_cnt_name + 1) * sizeof(char));
     strncpy(buffer_8, control->label, 8);
-    buffer_8[char_cnt_name] = '\0';
+    buffer_8[MIN(char_cnt_name, 8)] = '\0';
 
     //allign to middle, (full width / 2) - (text width / 2)
     glcd_text(display, (encoder_x + 18 - 2*char_cnt_name), encoder_y, buffer_8, Terminal3x5, GLCD_BLACK);
@@ -466,8 +465,6 @@ void screen_encoder(const control_t *control, uint8_t encoder)
     if (control->properties & (FLAG_CONTROL_ENUMERATION | FLAG_CONTROL_SCALE_POINTS))
     {
         uint8_t scalepoint_count_local = control->scale_points_count > 64 ? 64 : control->scale_points_count;
-
-        //char **labels_list = MALLOC(sizeof(char*) * scalepoint_count_local);
 
         uint8_t i;
         for (i = 0; i < scalepoint_count_local; i++)
@@ -491,8 +488,6 @@ void screen_encoder(const control_t *control, uint8_t encoder)
         list.line_bottom_margin = 1;
         list.text_left_margin = 1;
         widget_list_value(display, &list);
-
-        //FREE(labels_list);
     }
     else if ((control->properties & FLAG_CONTROL_TRIGGER) && (floats_are_equal(control->screen_indicator_widget_val, -1.f)))
     {
@@ -565,14 +560,11 @@ void screen_encoder(const control_t *control, uint8_t encoder)
             if (char_cnt_value > 8)
                 char_cnt_value = 8;
 
-            //char *value_str_bfr = (char *) MALLOC((char_cnt_value + 1) * sizeof(char));
             strncpy(buffer_8, control->value_string, 8);
-            buffer_8[char_cnt_value] = '\0';
+            buffer_8[MIN(char_cnt_value, 8)] = '\0';
             bar.value = buffer_8;
 
             widget_bar_encoder(display, &bar);
-
-            //FREE(value_str_bfr);
         }
 
         //check what to do with the unit
@@ -586,13 +578,10 @@ void screen_encoder(const control_t *control, uint8_t encoder)
                 char_cnt_unit = 7;
             }
 
-            //char *unit_str_bfr = (char *) MALLOC((char_cnt_unit + 1) * sizeof(char));
-            strncpy(buffer_8, control->unit, 7);
-            buffer_8[char_cnt_unit] = '\0';
+            strncpy(buffer_8, control->unit, 8);
+            buffer_8[MIN(char_cnt_unit, 8)] = '\0';
 
             glcd_text(display, (encoder_x + 18 - 2*char_cnt_unit), encoder_y + 12 + 7, buffer_8, Terminal3x5, GLCD_BLACK);
-
-            //FREE(unit_str_bfr);
             return;
         }
     }
@@ -754,6 +743,7 @@ void screen_encoder_container_paged(uint8_t current_page, uint8_t page_count)
 
 void screen_footer(uint8_t foot_id, const char *name, const char *value, int16_t property)
 {
+    static char buffer_16[16];
     glcd_t *display = hardware_glcds(0);
 
     uint8_t foot_y = 54;
@@ -826,11 +816,10 @@ void screen_footer(uint8_t foot_id, const char *name, const char *value, int16_t
             char_cnt_name = 7;
         }
 
-        char *title_str_bfr = (char *) MALLOC((char_cnt_name + 1) * sizeof(char));
-        strncpy(title_str_bfr, name, char_cnt_name);
-        title_str_bfr[char_cnt_name] = '\0';
+        strncpy(buffer_16, name, 15);
+        buffer_16[MIN(char_cnt_name, 15)] = '\0';
 
-        glcd_text(display, foot_x + (26 - (strlen(title_str_bfr) * 3)), foot_y + 2, title_str_bfr, Terminal5x7, GLCD_BLACK);
+        glcd_text(display, foot_x + (26 - (strlen(buffer_16) * 3)), foot_y + 2, buffer_16, Terminal5x7, GLCD_BLACK);
     
         if (value[1] == 'N')
             glcd_rect_invert(display, foot_x + 1, foot_y + 1, 49, 9);
@@ -838,7 +827,6 @@ void screen_footer(uint8_t foot_id, const char *name, const char *value, int16_t
         if ((property & FLAG_CONTROL_BYPASS) && (property & FLAG_CONTROL_MOMENTARY))
             glcd_rect_invert(display, foot_x + 1, foot_y + 1, 49, 9);
 
-        FREE(title_str_bfr);
     }
     else
     {
@@ -864,19 +852,17 @@ void screen_footer(uint8_t foot_id, const char *name, const char *value, int16_t
                 }
             }
 
-            char *group_str_bfr = (char *) MALLOC((char_cnt_name + char_cnt_value + 2) * sizeof(char));
-            memset(group_str_bfr, 0, (char_cnt_name + char_cnt_value + 2) * sizeof(char));
+            memset(buffer_16, 0, 16);
 
-            strncpy(group_str_bfr, name, char_cnt_name);
-            strcat(group_str_bfr, ":");
-            strncat(group_str_bfr, value, char_cnt_value);
-            group_str_bfr[char_cnt_name + char_cnt_value + 1] = '\0';
-            glcd_text(display, 26, foot_y + 2, group_str_bfr, Terminal5x7, GLCD_BLACK);
+            strncpy(buffer_16, name, MIN(char_cnt_name, 16));
+            strncat(buffer_16, ":", 15);
+            strncat(buffer_16, value, 15);
+            buffer_16[MIN(char_cnt_name + char_cnt_value + 1, 15)] = '\0';
+            glcd_text(display, 26, foot_y + 2, buffer_16, Terminal5x7, GLCD_BLACK);
 
             //group icon
             icon_footswitch_groups(display, DISPLAY_WIDTH-12, foot_y+1);
 
-            FREE(group_str_bfr);
         }
         else
         {
@@ -894,23 +880,15 @@ void screen_footer(uint8_t foot_id, const char *name, const char *value, int16_t
                 }
             }
 
-            char *title_str_bfr = (char *) MALLOC((char_cnt_name + 1) * sizeof(char));
-            char *value_str_bfr = (char *) MALLOC((char_cnt_value + 1) * sizeof(char));
-            memset(title_str_bfr, 0, (char_cnt_name + 1) * sizeof(char));
-            memset(value_str_bfr, 0, (char_cnt_value + 1) * sizeof(char));
-
             //draw name
-            strncpy(title_str_bfr, name, char_cnt_name);
-            title_str_bfr[char_cnt_name] = '\0';
-            glcd_text(display, foot_x + 2, foot_y + 2, title_str_bfr, Terminal5x7, GLCD_BLACK);
+            strncpy(buffer_16, name, 16);
+            buffer_16[char_cnt_name] = '\0';
+            glcd_text(display, foot_x + 2, foot_y + 2, buffer_16, Terminal5x7, GLCD_BLACK);
 
             // draws the value field
-            strncpy(value_str_bfr, value, char_cnt_value);
-            value_str_bfr[char_cnt_value] = '\0';
-            glcd_text(display, foot_x + (50 - ((strlen(value_str_bfr)) * 6)), foot_y + 2, value_str_bfr, Terminal5x7, GLCD_BLACK);
-        
-            FREE(title_str_bfr);
-            FREE(value_str_bfr);
+            strncpy(buffer_16, value, 16);
+            buffer_16[char_cnt_value] = '\0';
+            glcd_text(display, foot_x + (50 - ((strlen(buffer_16)) * 6)), foot_y + 2,buffer_16, Terminal5x7, GLCD_BLACK);
         }
     }
     
@@ -1579,6 +1557,7 @@ void screen_shift_overlay(int8_t prev_mode, int16_t *item_ids, uint8_t ui_connec
 
 void screen_control_overlay(control_t *control)
 {
+    static char *labels_list[64];
     overlay_t overlay;
     overlay.x = 0;
     overlay.y = 11;
@@ -1592,8 +1571,6 @@ void screen_control_overlay(control_t *control)
     if (control->properties & (FLAG_CONTROL_ENUMERATION | FLAG_CONTROL_SCALE_POINTS))
     {
         uint8_t scalepoint_count_local = control->scale_points_count > 64 ? 64 : control->scale_points_count;
-
-        char **labels_list = MALLOC(sizeof(char*) * scalepoint_count_local);
 
         uint8_t i;
         for (i = 0; i < scalepoint_count_local; i++)
@@ -1619,8 +1596,6 @@ void screen_control_overlay(control_t *control)
         list.line_bottom_margin = 1;
         list.text_left_margin = 0;
         widget_listbox_overlay(display, &list);
-
-        FREE(labels_list);
     }
     else if (control->properties & FLAG_CONTROL_TRIGGER)
     {
@@ -1650,7 +1625,7 @@ void screen_control_overlay(control_t *control)
     else
     {
         // footer text composition
-        char value_txt[32];
+        char value_txt[33];
         uint8_t i = 0;
 
         //if unit=ms or unit=bpm -> use 0 decimal points
@@ -1662,7 +1637,8 @@ void screen_control_overlay(control_t *control)
 
         //add space to footer
         value_txt[i++] = ' ';
-        strcpy(&value_txt[i], control->unit);
+        strncpy(&value_txt[i], control->unit, sizeof(value_txt) - i - 1);
+        value_txt[32] = '\0';
 
         //trigger trigger overlay widget
         overlay.color = GLCD_BLACK;
