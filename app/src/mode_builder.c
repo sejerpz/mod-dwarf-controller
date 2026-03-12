@@ -110,6 +110,12 @@ static void encoder_control_add(control_t *control)
     // checks if is already a control assigned in this display and remove it
     control_t *prev_control = plugin_edit.controls[control->hw_id];
 
+    // cleanup previous
+    if (prev_control)
+    {
+        data_free_control(prev_control);
+    }
+
     // assign the new control
     plugin_edit.controls[control->hw_id] = control;
 
@@ -158,12 +164,6 @@ static void encoder_control_add(control_t *control)
     {
         control->step =
             (control->value - control->minimum) / ((control->maximum - control->minimum) / control->steps);
-    }
-
-    // cleanup previous
-    if (prev_control)
-    {
-        data_free_control(prev_control);
     }
 
     if (naveg_get_current_mode() == MODE_BUILDER)
@@ -1127,11 +1127,27 @@ void BM_button_pressed(uint8_t button)
     }
 }
 
-
-void BM_add_control(control_t *control, uint8_t protocol)
+bool BM_remove_control(uint8_t hw_id)
 {
-    if (!g_initialized) return;
-    if (!control) return;
+    if (!g_initialized) return false;
+
+    if (hw_id < ENCODERS_COUNT)
+    {
+        encoder_control_rm(hw_id);
+        return true;
+    }
+    else
+        return false;
+    //else foot_control_rm(hw_id);
+}
+
+bool BM_add_control(control_t *control, uint8_t protocol)
+{
+    if (!g_initialized) return false;
+    if (!control) return false;
+
+    // first tries remove the control
+    BM_remove_control(control->hw_id);
 
     if (protocol) control->scroll_dir = 2;
     else control->scroll_dir = 0;
@@ -1140,15 +1156,10 @@ void BM_add_control(control_t *control, uint8_t protocol)
     {
         // this routine remove and deallocate the previous control too if present
         encoder_control_add(control);
+        return true;
     }
-}
-
-void BM_remove_control(uint8_t hw_id)
-{
-    if (!g_initialized) return;
-
-    if (hw_id < 3) encoder_control_rm(hw_id);
-    //else foot_control_rm(hw_id);
+    else
+        return false;
 }
 
 void BM_print_control_overlay(control_t *control, uint16_t overlay_time)

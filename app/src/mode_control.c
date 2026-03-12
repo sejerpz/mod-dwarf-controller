@@ -1006,18 +1006,26 @@ void CM_init(void)
     system_click_list_cb(NULL, MENU_EV_NONE);
 }
 
-void CM_remove_control(uint8_t hw_id)
+bool CM_remove_control(uint8_t hw_id)
 {
-    if (!g_initialized) return;
+    if (!g_initialized) return false;
 
-    if (hw_id < 3) encoder_control_rm(hw_id);
-    else foot_control_rm(hw_id);
+    if (hw_id < 3)
+    {
+        encoder_control_rm(hw_id);
+    }
+    else
+    {
+        foot_control_rm(hw_id);
+    }
+
+    return true;
 }
 
-void CM_add_control(control_t *control, uint8_t protocol)
+bool CM_add_control(control_t *control, uint8_t protocol)
 {
-    if (!g_initialized) return;
-    if (!control) return;
+    if (!g_initialized) return false;
+    if (!control) return false;
 
     // first tries remove the control
     CM_remove_control(control->hw_id);
@@ -1033,6 +1041,8 @@ void CM_add_control(control_t *control, uint8_t protocol)
     {
         foot_control_add(control);     
     }
+
+    return true;
 }
 
 control_t *CM_get_control(uint8_t hw_id)
