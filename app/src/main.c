@@ -445,7 +445,7 @@ static void post_boot_task(void *pvParameters)
             //we are now ready to start recieving user interactions
             hardware_enable_device_IRQS();
 
-            log_memory_config();
+            //log_memory_config();
 
             // deletes itself
             vTaskDelete(NULL);
