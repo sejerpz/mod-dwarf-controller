@@ -766,6 +766,7 @@ void widget_add_pb_button(glcd_t *display, uint8_t x, uint8_t y, uint8_t invert)
 
 void widget_listbox_overlay(glcd_t *display, listbox_t *listbox)
 {
+    static char buffer[16];
     //draw the box and tittle
     glcd_hline(display, listbox->x, listbox->y+5, DISPLAY_WIDTH, GLCD_BLACK);
     glcd_hline(display, listbox->x, listbox->y+listbox->height, DISPLAY_WIDTH, GLCD_BLACK);
@@ -783,15 +784,15 @@ void widget_listbox_overlay(glcd_t *display, listbox_t *listbox)
         //limit string
         char_cnt_name = 15;
     }
-    char *title_str_bfr = (char *) MALLOC((char_cnt_name + 1) * sizeof(char));
-    strncpy(title_str_bfr, listbox->name, char_cnt_name);
-    title_str_bfr[char_cnt_name] = '\0';
+
+    strncpy(buffer, listbox->name, 16);
+    buffer[MIN(char_cnt_name, 15)] = '\0';
 
     //clear the name area
     glcd_rect_fill(display, ((DISPLAY_WIDTH) /2) - char_cnt_name*3-3, 12, ((6*char_cnt_name) +11), 9, ~listbox->color);
 
     //draw the title
-    glcd_text(display, ((DISPLAY_WIDTH) /2) - char_cnt_name*3 + 7, listbox->y+2, title_str_bfr, listbox->font, listbox->color);
+    glcd_text(display, ((DISPLAY_WIDTH) /2) - char_cnt_name*3 + 7, listbox->y+2, buffer, listbox->font, listbox->color);
 
     //draw the icon before
     icon_overlay(display, ((DISPLAY_WIDTH) /2) - char_cnt_name*3 -1, listbox->y+4);
@@ -837,8 +838,6 @@ void widget_listbox_overlay(glcd_t *display, listbox_t *listbox)
     glcd_vline(display, listbox->x+listbox->width-1, listbox->y+5, listbox->height-5, GLCD_BLACK);
     glcd_hline(display, listbox->x, listbox->y+listbox->height+1, DISPLAY_WIDTH, GLCD_WHITE);
     glcd_hline(display, listbox->x, listbox->y+listbox->height, DISPLAY_WIDTH, GLCD_BLACK);
-
-    FREE(title_str_bfr);
 }
 
 void widget_foot_overlay(glcd_t *display, overlay_t *overlay)
