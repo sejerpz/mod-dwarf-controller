@@ -390,7 +390,7 @@ static void actuators_task(void *pvParameters)
 
             }
 
-            glcd_update(hardware_glcds(id));
+            glcd_update(hardware_glcds(0));
         }
     }
 }
