@@ -71,8 +71,9 @@ void BM_draw_encoders(void);
 void BM_button_pressed(uint8_t button);
 void BM_print_screen(void);
 
-void BM_add_control(control_t *control, uint8_t protocol);
-void BM_remove_control(uint8_t hw_id);
+// returns true if control was added
+bool BM_add_control(control_t *control, uint8_t protocol);
+bool BM_remove_control(uint8_t hw_id);
 void BM_print_control_overlay(control_t *control, uint16_t overlay_time);
      
 void BM_close_overlay(void);

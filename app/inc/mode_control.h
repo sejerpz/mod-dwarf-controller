@@ -55,8 +55,9 @@
 */
 
 void CM_init(void);
-void CM_add_control(control_t *control, uint8_t protocol);
-void CM_remove_control(uint8_t hw_id);
+// returns true if control was added
+bool CM_add_control(control_t *control, uint8_t protocol);
+bool CM_remove_control(uint8_t hw_id);
 control_t *CM_get_control(uint8_t hw_id);
 void CM_inc_control(uint8_t encoder);
 void CM_dec_control(uint8_t encoder);

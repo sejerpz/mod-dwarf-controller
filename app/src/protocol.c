@@ -785,18 +785,24 @@ void cb_gui_connection(uint8_t serial_id, proto_t *proto)
 void cb_control_add(uint8_t serial_id, proto_t *proto)
 {
     UNUSED_PARAM(serial_id);
-
+    bool added;
     control_t *control = data_parse_control(proto->list);
 
     if (naveg_get_current_mode() == MODE_BUILDER)
     {
-        BM_add_control(control, 1);
+        added = BM_add_control(control, 1);
     }
     else
     {
-        CM_add_control(control, 1);
+        added = CM_add_control(control, 1);
     }
     protocol_send_response(CMD_RESPONSE, 0, proto);
+
+    if (!added)
+    {
+        // control was not added by any page, free to avoid leaks
+        data_free_control(control);
+    }
 }
 
 void cb_control_rm(uint8_t serial_id, proto_t *proto)
