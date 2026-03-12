@@ -4,6 +4,10 @@ PRJNAME = mod-dwarf-controller
 # toolchain configuration
 TOOLCHAIN_PREFIX = arm-none-eabi-
 
+
+# Config
+# ENABLE_DEBUG_TRACE
+
 ifeq ($(CCC_ANALYZER_OUTPUT_FORMAT),)
 # cpu configuration
 THUMB = -mthumb
@@ -81,6 +85,9 @@ CFLAGS += -Wa,-adhlns=$(addprefix $(OUT_DIR)/, $(notdir $(addsuffix .lst, $(base
 CFLAGS += -MMD -MP -MF $(OUT_DIR)/dep/$(@F).d
 CFLAGS += -I. $(patsubst %,-I%,$(INC))
 CFLAGS += -D$(CPU_SERIE)
+ifneq ($(ENABLE_DEBUG_TRACE),)
+CFLAGS += -DENABLE_DEBUG_TRACE
+endif
 CFLAGS += -O2
 
 # Linker flags
