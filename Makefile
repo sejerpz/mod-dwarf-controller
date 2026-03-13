@@ -8,7 +8,7 @@ TOOLCHAIN_PREFIX = arm-none-eabi-
 GIT_HASH := $(shell git rev-parse --short=8 HEAD)
 
 # Config
-# ENABLE_DEBUG_TRACE
+# ENABLE_DEBUG_TRACE = 1
 # Enable SEMIHOST debug: librdimon
 # ENABLE_SEMIHOST
 
