@@ -76,6 +76,22 @@ static menu_item_t pluginMenuItem;
 static plugin_edit_t plugin_edit; // data for the plugin edit screen
 
 /*
+ * Unfortunately, the controller architecture is multithreaded.
+ *
+ * A function may be called either by the actuator task (e.g. when moving
+ * encoders or pressing buttons) or by the web protocol task (e.g. when
+ * adding/removing bindings or changing pages).
+ *
+ * Race conditions are not very common, since user interaction with buttons
+ * is usually followed by a server response (for example, loading a new page
+ * of controls).
+ *
+ * However, it can sometimes happen that a data structure is deallocated
+ * or modified while the screen is being updated.
+ *
+ */
+static SemaphoreHandle_t module_mutex = NULL;
+/*
 ************************************************************************************************************************
 *           LOCAL FUNCTION PROTOTYPES
 ************************************************************************************************************************
@@ -107,6 +123,7 @@ static void encoder_control_add(control_t *control)
 {
     if (control->hw_id >= ENCODERS_COUNT) return;
 
+    xSemaphoreTake(module_mutex, portMAX_DELAY);
     // checks if is already a control assigned in this display and remove it
     control_t *prev_control = plugin_edit.controls[control->hw_id];
 
@@ -172,17 +189,20 @@ static void encoder_control_add(control_t *control)
         if ((hardware_get_overlay_counter() || !control->scroll_dir) && (plugin_edit.current_overlay_control_index == control->hw_id))
         {
             BM_print_control_overlay(control, ENCODER_LIST_TIMEOUT);
-            return;
         }
-
-        // update the control screen
-        if (plugin_edit.current_overlay_control_index == -1)
-            screen_encoder(control, control->hw_id);
+        else
+        {
+            // update the control screen
+            if (plugin_edit.current_overlay_control_index == -1)
+                screen_encoder(control, control->hw_id);
+        }
     }
     else
     {
         trace("not builder mode");
     }
+
+    xSemaphoreGive(module_mutex);
 }
 
 // control removed from display
@@ -192,6 +212,8 @@ static void encoder_control_rm(uint8_t hw_id)
 
     if (naveg_get_current_mode() == MODE_BUILDER) 
     {
+        xSemaphoreTake(module_mutex, portMAX_DELAY);
+
         control_t *control = plugin_edit.controls[hw_id];
 
         if (control)
@@ -202,6 +224,8 @@ static void encoder_control_rm(uint8_t hw_id)
         }
         if (hardware_get_overlay_counter() == 0)
             screen_encoder(NULL, hw_id);
+
+        xSemaphoreGive(module_mutex);
     }
     else
     {
@@ -986,6 +1010,7 @@ static void BM_toggle_control(uint8_t encoder)
 */
 void BM_init(void)
 {
+    module_mutex = xSemaphoreCreateMutex();
     plugin_edit.plugin_name = "";
     plugin_edit.plugin_uid = NULL;
     plugin_edit.controls[0] = NULL;
@@ -1189,6 +1214,8 @@ void BM_close_overlay(void)
 
 void BM_print_screen(void)
 {
+    xSemaphoreTake(module_mutex, portMAX_DELAY);
+
     switch (uiState)
     {
         case PLUGIN_SELECT:
@@ -1203,4 +1230,6 @@ void BM_print_screen(void)
     }
     //we are sure we are not in overlay anymore
     plugin_edit.current_overlay_control_index = -1;
+
+    xSemaphoreGive(module_mutex);
 }
