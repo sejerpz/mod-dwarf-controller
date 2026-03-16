@@ -506,7 +506,14 @@ static void foot_control_print(control_t *control)
             }
 
             // updates the footer
-            screen_footer(control->hw_id - ENCODERS_COUNT, control->label, control->scale_points[i]->label, control->properties);
+            const char *scale_point_label = NULL;
+
+            if (control->scale_points != NULL && i < control->scale_points_count) {
+                scale_point_label = control->scale_points[i]->label;
+            } else {
+                scale_point_label = "";
+            }
+            screen_footer(control->hw_id - ENCODERS_COUNT, control->label, scale_point_label, control->properties);
         }
     }
 }
