@@ -685,7 +685,7 @@ void vApplicationStackOverflowHook(xTaskHandle *pxTask, signed portCHAR *pcTaskN
     glcd_text(glcd0, 0, 0, "stack overflow", NULL, GLCD_BLACK);
     glcd_text(glcd0, 0, 10, (const char *) pcTaskName, NULL, GLCD_BLACK);
     glcd_update(glcd0);
-    ledz_on(hardware_leds(5), CYAN);
+    ledz_on(hardware_leds(0), CYAN);
     while (1);
 }
 
