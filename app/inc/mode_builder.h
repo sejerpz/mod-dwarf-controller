@@ -74,6 +74,7 @@ void BM_print_screen(void);
 // returns true if control was added
 bool BM_add_control(control_t *control, uint8_t protocol);
 bool BM_remove_control(uint8_t hw_id);
+void BM_set_control(uint8_t hw_id, float value);
 void BM_print_control_overlay(control_t *control, uint16_t overlay_time);
      
 void BM_close_overlay(void);

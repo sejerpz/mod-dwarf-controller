@@ -314,6 +314,7 @@ void protocol_init(void)
     protocol_add_command(CMD_CONTROL_REMOVE, cb_control_rm);
     protocol_add_command(CMD_CONTROL_SET, cb_control_set);
     protocol_add_command(CMD_CONTROL_GET, cb_control_get);
+    protocol_add_command(CMD_DWARF_BUILDER_CONTROL_SET, cb_builder_control_set);
     protocol_add_command(CMD_INITIAL_STATE, cb_initial_state);
     protocol_add_command(CMD_TUNER, cb_tuner);
     protocol_add_command(CMD_TUNER_INPUT, cb_tuner_input);
@@ -845,6 +846,16 @@ void cb_control_get(uint8_t serial_id, proto_t *proto)
 
     float_to_str(value, &resp[strlen(resp)], 8, 3);
     protocol_response(resp, proto);
+}
+
+
+void cb_builder_control_set(uint8_t serial_id, proto_t *proto)
+{
+    UNUSED_PARAM(serial_id);
+
+    BM_set_control(atoi(proto->list[1]), atof(proto->list[2]));
+
+    protocol_send_response(CMD_RESPONSE, 0, proto);
 }
 
 void cb_initial_state(uint8_t serial_id, proto_t *proto)

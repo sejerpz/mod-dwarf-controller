@@ -1233,3 +1233,65 @@ void BM_print_screen(void)
 
     xSemaphoreGive(module_mutex);
 }
+
+/*
+    Update the display control value
+
+    Actually in builder only encoder are used to display
+    plugin parameters values
+*/
+void BM_set_control(uint8_t hw_id, float value)
+{
+    if (!g_initialized) return;
+
+    control_t *control = NULL;
+    uint8_t i = 0;
+
+    //encoder
+    if (hw_id < ENCODERS_COUNT)
+    {
+        control = plugin_edit.controls[hw_id];
+    }
+
+    if (control)
+    {
+        control->value = value;
+        if (value < control->minimum)
+            control->value = control->minimum;
+        if (value > control->maximum)
+            control->value = control->maximum;
+
+        // updates the step value
+        //for enumerations, this will ONLY be called for non paginated lists
+        if (control->properties & (FLAG_CONTROL_ENUMERATION | FLAG_CONTROL_SCALE_POINTS)) {
+            // locates the current value
+            control->step = 0;
+            for (i = 0; i < control->scale_points_count; i++)
+            {
+                if (floats_are_equal(control->value, control->scale_points[i]->value))
+                {
+                    control->step = i;
+                    control->scale_point_index = i;
+                    break;
+                }
+            }
+        }
+        else {
+            control->step =
+                (control->value - control->minimum) / ((control->maximum - control->minimum) / control->steps);
+        }
+
+        if ((naveg_get_current_mode() != MODE_BUILDER) || (hardware_get_overlay_counter() != 0)){
+            return;
+        }
+
+        //encoder
+        if (hw_id < ENCODERS_COUNT)
+        {
+            if (control->properties & (FLAG_CONTROL_SCALE_POINTS | FLAG_CONTROL_REVERSE | FLAG_CONTROL_ENUMERATION))  {
+                clone_list_encoders(control);
+            }
+            screen_encoder(control, control->hw_id);
+        }
+    }
+}
