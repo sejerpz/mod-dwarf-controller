@@ -1013,6 +1013,10 @@ void cb_pedalboard_name(uint8_t serial_id, proto_t *proto)
         NM_set_leds();
         NM_check_for_trail_plugin();
     }
+    else if (naveg_get_current_mode() == MODE_BUILDER || naveg_get_current_mode() == MODE_SHIFT)
+    {
+        naveg_trigger_mode_change(MODE_CONTROL);
+    }
 
     protocol_send_response(CMD_RESPONSE, 0, proto);
 }

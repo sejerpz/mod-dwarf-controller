@@ -20,6 +20,7 @@
 #include "mode_builder.h"
 #include <stdlib.h>
 #include <string.h>
+#include "logging.h"
 
 //reset actuator queue
 void reset_queue(void);
@@ -1341,7 +1342,13 @@ void naveg_trigger_mode_change(uint8_t mode)
     //toggle shift
     g_device_mode = mode;
 
-    //exit the shift menu, return to opperational mode
+    if (g_prev_device_mode == MODE_BUILDER || g_prev_device_mode == MODE_SHIFT) {
+        if (shift_mode_active) {
+            shift_mode_active = false;
+            exit_shift_menu();
+        }
+    }
+
     switch(g_device_mode)
     {
         case MODE_CONTROL:
