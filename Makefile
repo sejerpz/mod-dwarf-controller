@@ -91,7 +91,10 @@ CFLAGS += -I. $(patsubst %,-I%,$(INC))
 CFLAGS += -D$(CPU_SERIE)
 CFLAGS += -DVERSION_HASH=\"v.$(GIT_HASH)\"
 ifneq ($(ENABLE_SEMIHOST),)
-CFLAGS += -DENABLE_SEMIHOST
+CFLAGS += -DENABLE_SEMIHOST 
+CFLAGS += -oslib=semihost
+else
+CFLAGS += -oslib=nosys
 endif
 ifneq ($(ENABLE_DEBUG_TRACE),)
 CFLAGS += -DENABLE_DEBUG_TRACE
@@ -107,9 +110,9 @@ LDFLAGS = -Wl,-Map=$(OUT_DIR)/$(PRJNAME).map,--cref
 ifeq ($(CCC_ANALYZER_OUTPUT_FORMAT),)
 
 ifeq ($(ENABLE_SEMIHOST),)
-# semihosting debugger support
-LDFLAGS += -specs=nano.specs -specs=nosys.specs
+LDFLAGS += -specs=picolibc.specs 
 else
+# semihosting debugger support
 LDFLAGS += -specs=rdimon.specs -lrdimon
 endif
 

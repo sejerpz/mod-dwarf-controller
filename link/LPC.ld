@@ -138,7 +138,7 @@ SECTIONS
     /* Force 16-byte alignment for the start of the heap to prevent Usage Faults */
     . = ALIGN(8);
     PROVIDE(_pvHeapStart = .);
-
+    
     /* Calculate the top of SRAM0 (0x10010000) */
     __top_SRAM = ORIGIN(SRAM) + LENGTH(SRAM);
 
@@ -146,6 +146,10 @@ SECTIONS
      * This ensures the stack has its reserved space at the very end of RAM.
      */
     PROVIDE(_pvHeapEnd = __top_SRAM - __stack_size);
+
+    /* For picolibc library */
+    PROVIDE(__heap_start = _pvHeapStart);
+    PROVIDE(__heap_end = _pvHeapEnd);
 
     /* * Safety check: Ensure that BSS + NoInit + Stack do not exceed available RAM.
      * If this fails, the linker will throw an error during compilation.
