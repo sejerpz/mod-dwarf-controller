@@ -59,7 +59,6 @@
 ************************************************************************************************************************
 */
 
-
 /*
 ************************************************************************************************************************
 *           LOCAL MACROS
@@ -72,7 +71,7 @@
 
 #define ACTUATORS_QUEUE_SIZE    20
 #define RESERVED_QUEUE_SPACES   10
-
+#define PROTOCOL_QUEUE_LEN      4
 
 /*
 ************************************************************************************************************************
@@ -83,6 +82,13 @@
 static volatile xQueueHandle g_actuators_queue;
 static uint8_t g_comm_msg_buffer[WEBGUI_COMM_RX_BUFF_SIZE];
 static uint8_t g_sys_msg_buffer[SYSTEM_COMM_RX_BUFF_SIZE];
+
+// Message to process from the serials
+static QueueHandle_t xProtocolQueue = NULL;
+
+// Protected the serial static buffers
+static SemaphoreHandle_t xSysBufferSem = NULL;
+static SemaphoreHandle_t xGuiBufferSem = NULL;
 
 /*
 ************************************************************************************************************************
@@ -96,6 +102,8 @@ static void actuators_cb(void *actuator);
 // tasks
 static void webgui_procotol_task(void *pvParameters);
 static void system_procotol_task(void *pvParameters);
+static void webgui_queue_protocol_task(void *pvParameters);
+static void system_queue_protocol_task(void *pvParameters);
 static void displays_task(void *pvParameters);
 static void actuators_task(void *pvParameters);
 static void cli_task(void *pvParameters);
@@ -207,7 +215,7 @@ static void webgui_procotol_task(void *pvParameters)
 {
     UNUSED_PARAM(pvParameters);
 
-    hardware_eneble_serial_interupt(WEBGUI_SERIAL);
+    hardware_enable_serial_interrupt(WEBGUI_SERIAL);
 
     protocol_init();
 
@@ -234,7 +242,7 @@ static void system_procotol_task(void *pvParameters)
 {
     UNUSED_PARAM(pvParameters);
 
-    hardware_eneble_serial_interupt(SYSTEM_SERIAL);
+    hardware_enable_serial_interrupt(SYSTEM_SERIAL);
 
     while (1)
     {
@@ -251,6 +259,91 @@ static void system_procotol_task(void *pvParameters)
             msg.data = (char *) g_sys_msg_buffer;
             msg.data_size = msg_size;
             protocol_parse(&msg);
+        }
+    }
+}
+
+static void webgui_queue_protocol_task(void *pvParameters)
+{
+    UNUSED_PARAM(pvParameters);
+    hardware_enable_serial_interrupt(WEBGUI_SERIAL);
+
+    protocol_init();
+
+    while (1)
+    {
+        ringbuff_t *rb = ui_comm_webgui_read();
+
+        if (xSemaphoreTake(xGuiBufferSem, portMAX_DELAY) == pdTRUE)
+        {
+            uint32_t msg_size = ringbuff_read_until(rb, g_comm_msg_buffer, WEBGUI_COMM_RX_BUFF_SIZE, 0);
+
+            if (msg_size > 0)
+            {
+                msg_t msg = {
+                    .sender_id = WEBGUI_SERIAL,
+                    .data = (char *) g_comm_msg_buffer,
+                    .data_size = msg_size,
+                    .buffer_sem = xGuiBufferSem
+                };
+
+                xQueueSend(xProtocolQueue, &msg, portMAX_DELAY);
+            }
+            else
+            {
+                xSemaphoreGive(xGuiBufferSem);
+            }
+        }
+    }
+}
+
+static void system_queue_protocol_task(void *pvParameters)
+{
+    UNUSED_PARAM(pvParameters);
+    hardware_enable_serial_interrupt(SYSTEM_SERIAL);
+
+    while (1)
+    {
+        ringbuff_t *rb = sys_comm_read();
+
+        if (xSemaphoreTake(xSysBufferSem, portMAX_DELAY) == pdTRUE)
+        {
+            uint32_t msg_size = ringbuff_read_until(rb, g_sys_msg_buffer, SYSTEM_COMM_RX_BUFF_SIZE, 0);
+
+            if (msg_size > 0)
+            {
+                msg_t msg = {
+                    .sender_id = SYSTEM_SERIAL,
+                    .data = (char *) g_sys_msg_buffer,
+                    .data_size = msg_size,
+                    .buffer_sem = xSysBufferSem // unlock the caller buffer
+                };
+
+                xQueueSend(xProtocolQueue, &msg, portMAX_DELAY);
+            }
+            else
+            {
+                xSemaphoreGive(xSysBufferSem);
+            }
+        }
+    }
+}
+
+static void protocol_parser_task(void *pvParameters)
+{
+    UNUSED_PARAM(pvParameters);
+    msg_t msg;
+
+    while (1)
+    {
+        if (xQueueReceive(xProtocolQueue, &msg, portMAX_DELAY) == pdTRUE)
+        {
+            protocol_parse(&msg);
+
+            if (msg.buffer_sem != NULL)
+            {
+                xSemaphoreGive(msg.buffer_sem);
+            }
         }
     }
 }
@@ -482,10 +575,17 @@ static void setup_task(void *pvParameters)
 
     // create the queues
     g_actuators_queue = xQueueCreate(ACTUATORS_QUEUE_SIZE, sizeof(uint8_t *));
+    xProtocolQueue = xQueueCreate(PROTOCOL_QUEUE_LEN, sizeof(msg_t));
+
+    xSysBufferSem = xSemaphoreCreateBinary();
+    xGuiBufferSem = xSemaphoreCreateBinary();
+    xSemaphoreGive(xSysBufferSem);
+    xSemaphoreGive(xGuiBufferSem);
 
     // create the continuous tasks
-    xTaskCreate(webgui_procotol_task, TASK_NAME("ui_proto"), 512, NULL, 4, NULL);
-    xTaskCreate(system_procotol_task, TASK_NAME("sys_proto"), 128, NULL, 5, NULL);
+    xTaskCreate(webgui_queue_protocol_task, TASK_NAME("ui_proto"), 128, NULL, 4, NULL);
+    xTaskCreate(system_queue_protocol_task, TASK_NAME("sys_proto"), 128, NULL, 5, NULL);
+    xTaskCreate(protocol_parser_task, TASK_NAME("parse_proto"), 512, NULL, 5, NULL);
     xTaskCreate(actuators_task, TASK_NAME("act"), 256, NULL, 3, NULL);
     xTaskCreate(cli_task, TASK_NAME("cli"), 128, NULL, 4, NULL);
     xTaskCreate(displays_task, TASK_NAME("disp"), 128, NULL, 1, NULL);

@@ -55,6 +55,7 @@ typedef struct MSG_T {
     int sender_id;
     char *data;
     uint32_t data_size;
+    SemaphoreHandle_t buffer_sem;
 } msg_t;
 
 

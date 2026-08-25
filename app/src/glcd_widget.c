@@ -766,7 +766,7 @@ void widget_add_pb_button(glcd_t *display, uint8_t x, uint8_t y, uint8_t invert)
 
 void widget_listbox_overlay(glcd_t *display, listbox_t *listbox)
 {
-    static char buffer[16];
+    char buffer[16];
     //draw the box and tittle
     glcd_hline(display, listbox->x, listbox->y+5, DISPLAY_WIDTH, GLCD_BLACK);
     glcd_hline(display, listbox->x, listbox->y+listbox->height, DISPLAY_WIDTH, GLCD_BLACK);

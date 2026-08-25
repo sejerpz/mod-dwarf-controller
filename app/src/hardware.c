@@ -789,10 +789,10 @@ void hardware_setup(void)
     serial_init(&g_serial[3]);
     #endif
 
-    hardware_eneble_serial_interupt(CLI_SERIAL);
+    hardware_enable_serial_interrupt(CLI_SERIAL);
 }
 
-void hardware_eneble_serial_interupt(uint8_t serial_port)
+void hardware_enable_serial_interrupt(uint8_t serial_port)
 {
     serial_enable_interupt(&g_serial[serial_port]);
 }
