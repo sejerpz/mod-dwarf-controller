@@ -30,6 +30,7 @@
 
 #include <stdint.h>
 #include "glcd.h"
+#include "glcd_clip.h"   // glcd_rect_t, and the clipped primitives the renderer draws with
 
 
 /*
@@ -38,7 +39,13 @@
 ************************************************************************************************************************
 */
 
-// record types, first character of each line
+// Records are separated by this, sent as a token of its own. Not a newline: the protocol splits
+// a message on spaces only (protocol.c: strarr_split(msg->data, ' ')), so a newline would be
+// glued onto the neighbouring token. mod-ui keeps it out of labels, and LV2 symbols cannot
+// contain it, so it is unambiguous rather than merely unlikely.
+#define MINIMAP_RECORD_SEP      ';'
+
+// record types, first character of each record
 #define MINIMAP_REC_HEADER      'M'
 #define MINIMAP_REC_NODE        'N'
 #define MINIMAP_REC_PORT        'P'
@@ -104,8 +111,7 @@ typedef struct MINIMAP_PORT_T {
 
 typedef struct MINIMAP_NODE_T {
     int16_t id;             // node id as sent on the wire, not our array index
-    int16_t x, y;
-    uint8_t width, height;
+    glcd_rect_t rect;       // box in scene coordinates
     uint8_t kind;
     uint8_t bypassed;
     uint8_t layer, row;
@@ -136,8 +142,8 @@ typedef struct MINIMAP_T {
     uint8_t n_nodes, n_ports, n_edges;
 
     // view
-    uint8_t view_x, view_y, view_width, view_height;
-    int16_t offset_x, offset_y;
+    glcd_rect_t view;       // clip rectangle on the panel
+    int16_t offset_x, offset_y;     // scene -> panel pan
     int8_t selected;        // index into nodes, or MINIMAP_NONE
     uint8_t layers;         // which signal types to draw
 } minimap_t;
@@ -157,7 +163,9 @@ void minimap_init(minimap_t *map);
 // smaller picture instead of a blank screen.
 uint8_t minimap_parse(minimap_t *map, const char *text);
 
-// Sets the viewport rectangle on the panel; the rest of the screen is left to the caller.
+// Sets the viewport rectangle on the panel; the rest of the screen is left to the caller. The
+// scene is panned under this rectangle, and it is the clip region handed to the drawing
+// primitives.
 void minimap_set_view(minimap_t *map, uint8_t x, uint8_t y, uint8_t width, uint8_t height);
 
 // Array index of the node with this wire id, or MINIMAP_NONE.
