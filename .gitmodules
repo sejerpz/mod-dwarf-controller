@@ -1,4 +1,4 @@
 [submodule "mod-controller-proto"]
 	path = mod-controller-proto
 	url = git@github.com:sejerpz/mod-controller-proto.git
-	branch = features/builder
+	branch = devel
