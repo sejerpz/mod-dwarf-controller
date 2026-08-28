@@ -20,7 +20,8 @@
 *               gcc -std=gnu99 -Wall -Wextra -Inxp-lpc -Iapp/inc -Idrivers/inc -Ifreertos/inc \
 *                   -Imod-controller-proto -Inxp-lpc/CMSISv2p00_LPC177x_8xLib/inc \
 *                   -Inxp-lpc/LPC177x_8xLib/inc \
-*                   test/minimap_host_test.c app/src/minimap.c -o /tmp/minimap_test
+*                   test/minimap_host_test.c app/src/minimap.c app/src/glcd_clip.c \
+*                   -o /tmp/minimap_test
 *               curl -s "http://localhost:8888/pedalboard/minimap" | /tmp/minimap_test
 *
 *           Optional arguments: view_x view_y view_w view_h [selection] [offset_x offset_y]
