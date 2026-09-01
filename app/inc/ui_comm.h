@@ -74,6 +74,9 @@ void ui_comm_webgui_set_response_cb(void (*resp_cb)(void *data, menu_item_t *ite
 void ui_comm_webgui_response_cb(void *data);
 // blocks the execution until the webgui response be received
 void ui_comm_webgui_wait_response(void);
+// the same wait taken apart, so the caller can draw while it lasts
+void ui_comm_webgui_wait_begin(void);
+uint8_t ui_comm_webgui_wait_pending(void);
 // clear the data in the buffer
 void ui_comm_webgui_clear(void);
 void ui_comm_webgui_clear_tx_buffer(void);

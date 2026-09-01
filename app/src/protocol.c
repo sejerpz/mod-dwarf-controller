@@ -327,6 +327,8 @@ void protocol_init(void)
     protocol_add_command(CMD_PEDALBOARD_CHANGE, cb_pedalboard_change);
     protocol_add_command(CMD_SNAPSHOT_NAME_SET, cb_snapshot_name);
     protocol_add_command(CMD_DWARF_PAGES_AVAILABLE, cb_pages_available);
+    protocol_add_command(CMD_PEDALBOARD_LOAD_BEGIN, cb_pedalboard_load_begin);
+    protocol_add_command(CMD_PEDALBOARD_LOAD_END, cb_pedalboard_load_end);
     protocol_add_command(CMD_SELFTEST_SKIP_CONTROL_ENABLE, cb_set_selftest_control_skip);
     protocol_add_command(CMD_SYS_CHANGE_LED_BLINK, cb_change_assigned_led_blink);
     protocol_add_command(CMD_SYS_CHANGE_LED_BRIGHTNESS, cb_change_assigned_led_brightness);
@@ -1041,6 +1043,33 @@ void cb_pages_available(uint8_t serial_id, proto_t *proto)
     CM_set_pages_available(pages_toggles);
 }
 
+/*
+ * The two edges of a pedalboard load, whoever asked for it. Everything between them is a
+ * board in pieces -- plugins arriving one at a time, cables and addressings following --
+ * so anything here that is a view onto the board stands down for the duration.
+ *
+ * The builder is such a view: it is left rather than redrawn around a graph that no longer
+ * holds, and the controls the load sends afterwards then land in control mode, which is
+ * where they belong.
+ */
+void cb_pedalboard_load_begin(uint8_t serial_id, proto_t *proto)
+{
+    UNUSED_PARAM(serial_id);
+
+    protocol_send_response(CMD_RESPONSE, 0, proto);
+
+    if (naveg_get_current_mode() == MODE_BUILDER)
+        naveg_trigger_mode_change(MODE_CONTROL);
+}
+
+void cb_pedalboard_load_end(uint8_t serial_id, proto_t *proto)
+{
+    UNUSED_PARAM(serial_id);
+
+    // nothing to undo yet; the pair exists so that what is put up at the begin has an end
+    protocol_send_response(CMD_RESPONSE, 0, proto);
+}
+
 void cb_clear_eeprom(uint8_t serial_id, proto_t *proto)
 {
     UNUSED_PARAM(serial_id);
@@ -1104,6 +1133,17 @@ void cb_screenshot(uint8_t serial_id, proto_t *proto)
 {
     UNUSED_PARAM(serial_id);
 
-    //set a flag, as we can not send new commands from a cb of a recieved one
+    /*
+     * Answered before the flag goes up, and answered at all: without this the host is left
+     * waiting on a request it will never hear about again, and the eight messages the main
+     * loop is about to send queue up behind a transaction that never closes.
+     *
+     * The flag rather than the data here because a callback cannot send new commands of its
+     * own -- the response is not a new command, it is the end of this one.
+     *
+     * One based on the wire: zero is what the flag reads as nothing to do.
+     */
+    protocol_send_response(CMD_RESPONSE, 0, proto);
+
     g_screenshot = atoi(proto->list[1]);
 }

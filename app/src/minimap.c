@@ -144,6 +144,19 @@ void minimap_set_view(minimap_t *map, uint8_t x, uint8_t y, uint8_t width, uint8
     map->view.height = height;
 }
 
+void minimap_set_blink(minimap_t *map, uint8_t off)
+{
+    if (map) map->blink_off = off;
+}
+
+void minimap_unescape(char *text)
+{
+    if (!text) return;
+
+    for (; *text; text++)
+        if (*text == '_') *text = ' ';
+}
+
 int8_t minimap_index_of(const minimap_t *map, int16_t id)
 {
     uint8_t i;
@@ -225,10 +238,22 @@ uint8_t minimap_parse(minimap_t *map, const char *text)
                 node->row = (uint8_t)read_int(&cursor);
                 read_token(&cursor, node->label, MINIMAP_LABEL_SIZE);
 
-                node->up = MINIMAP_NONE;
-                node->down = MINIMAP_NONE;
-                node->left = MINIMAP_NONE;
-                node->right = MINIMAP_NONE;
+                // The title is the last field and mod-ui sends "=" when it would only
+                // repeat the label. An empty read means an older server that does not
+                // send it at all, which falls back the same way.
+                read_token(&cursor, node->title, MINIMAP_TITLE_SIZE);
+                if (node->title[0] == 0 || (node->title[0] == '=' && node->title[1] == 0))
+                {
+                    strncpy(node->title, node->label, MINIMAP_TITLE_SIZE - 1);
+                    node->title[MINIMAP_TITLE_SIZE - 1] = 0;
+                }
+
+                // both are names a person wrote, so the wire's underscores were spaces
+                minimap_unescape(node->label);
+                minimap_unescape(node->title);
+
+                node->prev = MINIMAP_NONE;
+                node->next = MINIMAP_NONE;
 
                 map->n_nodes++;
                 break;
@@ -305,10 +330,10 @@ uint8_t minimap_parse(minimap_t *map, const char *text)
 
                 minimap_node_t *node = &map->nodes[index];
 
-                node->up = minimap_index_of(map, read_int(&cursor));
-                node->down = minimap_index_of(map, read_int(&cursor));
-                node->left = minimap_index_of(map, read_int(&cursor));
-                node->right = minimap_index_of(map, read_int(&cursor));
+                // kept as sent, not resolved to an index: the neighbour is often a box
+                // this window does not contain, and resolving here would lose it
+                node->prev = read_int(&cursor);
+                node->next = read_int(&cursor);
                 break;
             }
 
@@ -341,19 +366,63 @@ uint8_t minimap_parse(minimap_t *map, const char *text)
     return 1;
 }
 
-int8_t minimap_navigate(const minimap_t *map, int8_t from, uint8_t direction)
+/* whether the cursor is allowed to stop here; unfiltered, everything is */
+static uint8_t may_select(const minimap_t *map, int8_t index)
+{
+    if (!map->filtered) return 1;
+    if (index < 0 || index >= map->n_nodes) return 0;
+    return map->selectable[index];
+}
+
+int16_t minimap_step(const minimap_t *map, int8_t from, uint8_t direction)
 {
     if (!map || from < 0 || from >= map->n_nodes) return MINIMAP_NONE;
 
-    const minimap_node_t *node = &map->nodes[from];
-
-    switch (direction)
+    if (map->view_mode == MINIMAP_VIEW_LIST)
     {
-        case MINIMAP_UP:    return node->up;
-        case MINIMAP_DOWN:  return node->down;
-        case MINIMAP_LEFT:  return node->left;
-        case MINIMAP_RIGHT: return node->right;
-        default:            return MINIMAP_NONE;
+        // the list walks its own order, not the picture's
+        int16_t step = (direction == MINIMAP_NEXT) ? 1 : -1;
+        int16_t at = -1;
+        int16_t i;
+
+        for (i = 0; i < map->n_nodes; i++)
+        {
+            if (map->order[i] == from) at = i;
+        }
+
+        if (at < 0) return MINIMAP_NONE;
+
+        for (at += step; at >= 0 && at < map->n_nodes; at += step)
+        {
+            if (may_select(map, (int8_t) map->order[at]))
+                return map->nodes[map->order[at]].id;
+        }
+
+        return MINIMAP_NONE;
+    }
+
+    /*
+     * The picture walks mod-ui's order. With a filter on, boxes that cannot be picked are
+     * stepped over -- but only while they are in this window: an id from outside is handed
+     * back as it is, because whether it may be picked is not knowable until it arrives.
+     */
+    {
+        int16_t id = (direction == MINIMAP_PREV) ? map->nodes[from].prev
+                   : (direction == MINIMAP_NEXT) ? map->nodes[from].next
+                   : MINIMAP_NONE;
+
+        while (id != MINIMAP_NONE)
+        {
+            int8_t index = minimap_index_of(map, id);
+
+            if (index == MINIMAP_NONE) return id;
+            if (may_select(map, index)) return id;
+
+            id = (direction == MINIMAP_PREV) ? map->nodes[index].prev
+                                             : map->nodes[index].next;
+        }
+
+        return MINIMAP_NONE;
     }
 }
 
@@ -364,35 +433,69 @@ void minimap_select(minimap_t *map, int8_t node)
     map->selected = node;
 
     const minimap_node_t *n = &map->nodes[node];
-    int16_t margin = MINIMAP_SCROLL_MARGIN;
 
-    // scroll only as far as needed to bring the box inside, so the picture moves as little as possible
-    if ((n->rect.x - margin) < map->offset_x)
-        map->offset_x = n->rect.x - margin;
-    else if ((n->rect.x + n->rect.width + margin) > (map->offset_x + map->view.width))
-        map->offset_x = n->rect.x + n->rect.width + margin - map->view.width;
+    /*
+     * Horizontally, centred rather than scrolled the least we can get away with. mod-ui
+     * builds the window from the boxes nearest the selection, so the panel has to look at
+     * the same place: with a minimal scroll the selection ends up against whichever edge
+     * the user came from, the visible boxes are all on one side, and half of them were
+     * never in the message.
+     */
+    map->offset_x = n->rect.x + n->rect.width / 2 - map->view.width / 2;
 
-    if ((n->rect.y - margin) < map->offset_y)
-        map->offset_y = n->rect.y - margin;
-    else if ((n->rect.y + n->rect.height + margin) > (map->offset_y + map->view.height))
-        map->offset_y = n->rect.y + n->rect.height + margin - map->view.height;
+    /*
+     * The hardware boxes are anchors. mod-ui centres every column on one axis and puts
+     * IN1/IN2 and OUT1/OUT2 across it, so landing on one of them means going back to the
+     * middle of the board whatever route got us here. Without that the view is a function
+     * of the path: the same pair was drawn several pixels apart depending on whether the
+     * walk had passed the top row or the bottom one on the way.
+     */
+    if (n->kind == MINIMAP_HW_SOURCE || n->kind == MINIMAP_HW_SINK)
+    {
+        map->offset_y = (map->scene_height - map->view.height) / 2;
+    }
+
+    /*
+     * Everything else moves only when the box is not already whole on the panel, and then
+     * by the least that brings it in: a step along the chain should not shift the picture
+     * under the eye, and centring the box would throw the view to one end of its travel.
+     * The anchor above lands here too, in case a board with more hardware than the panel
+     * can hold leaves the pair clipped by the middle of the canvas.
+     */
+    if (n->rect.y < map->offset_y)
+    {
+        map->offset_y = n->rect.y;
+    }
+    else if (n->rect.y + n->rect.height > map->offset_y + map->view.height)
+    {
+        map->offset_y = n->rect.y + n->rect.height - map->view.height;
+    }
 
     minimap_scroll(map, 0, 0);
 }
 
 void minimap_scroll(minimap_t *map, int16_t dx, int16_t dy)
 {
-    int16_t max_x, max_y;
+    int16_t max_x, max_y, min_x, min_y;
 
     if (!map) return;
 
     max_x = map->scene_width - map->view.width;
     max_y = map->scene_height - map->view.height;
-    if (max_x < 0) max_x = 0;
-    if (max_y < 0) max_y = 0;
 
-    map->offset_x = clamp16(map->offset_x + dx, 0, max_x);
-    map->offset_y = clamp16(map->offset_y + dy, 0, max_y);
+    /*
+     * A scene smaller than the viewport has nothing to pan: the offset that centres it is
+     * negative, and pinning that to zero leaves the picture against an edge. mod-ui sends
+     * the scene at its natural size and lets the panel place it, because only the panel
+     * knows how much of itself the title bar and the footer have taken.
+     */
+    min_x = (max_x < 0) ? max_x / 2 : 0;
+    min_y = (max_y < 0) ? max_y / 2 : 0;
+    if (max_x < 0) max_x = min_x;
+    if (max_y < 0) max_y = min_y;
+
+    map->offset_x = clamp16(map->offset_x + dx, min_x, max_x);
+    map->offset_y = clamp16(map->offset_y + dy, min_y, max_y);
 }
 
 const minimap_node_t *minimap_selected(const minimap_t *map)
@@ -418,7 +521,120 @@ uint8_t minimap_has_offscreen_link(const minimap_t *map, int8_t node)
     return 0;
 }
 
+static void minimap_draw_graph(glcd_t *display, const minimap_t *map);
+
+/*
+ * The nodes in alphabetical order. Insertion sort: at most MINIMAP_MAX_NODES of them, and
+ * it runs once when the mode is switched rather than on every draw.
+ */
+static void build_order(minimap_t *map)
+{
+    uint8_t i, j;
+
+    for (i = 0; i < map->n_nodes; i++)
+    {
+        uint8_t index = i;
+
+        for (j = i; j > 0; j--)
+        {
+            if (strcmp(map->nodes[map->order[j - 1]].title,
+                       map->nodes[index].title) <= 0) break;
+
+            map->order[j] = map->order[j - 1];
+        }
+
+        map->order[j] = index;
+    }
+}
+
+void minimap_set_view_mode(minimap_t *map, uint8_t mode)
+{
+    if (!map) return;
+
+    map->view_mode = mode;
+
+    if (mode == MINIMAP_VIEW_LIST)
+        build_order(map);
+}
+
+void minimap_set_selectable(minimap_t *map, const int16_t *ids, uint8_t count)
+{
+    uint8_t i;
+    int8_t index;
+
+    if (!map) return;
+
+    for (i = 0; i < MINIMAP_MAX_NODES; i++) map->selectable[i] = 0;
+
+    map->filtered = (count > 0);
+    if (!map->filtered) return;
+
+    for (i = 0; i < count; i++)
+    {
+        index = minimap_index_of(map, ids[i]);
+        if (index != MINIMAP_NONE) map->selectable[index] = 1;
+    }
+}
+
+/*
+ * The same boxes as a list of names. No panning: the whole thing scrolls a row at a time
+ * around the selection, so finding a plugin is reading down a column rather than steering
+ * across a picture.
+ */
+static void draw_list(glcd_t *display, const minimap_t *map)
+{
+    const uint8_t pitch = 7;
+    glcd_rect_t clip = map->view;
+    glcd_rect_t row;
+    uint8_t visible, i;
+    int16_t first = 0, position = 0;
+
+    if (map->n_nodes == 0) return;
+
+    visible = map->view.height / pitch;
+    if (visible > map->n_nodes) visible = map->n_nodes;
+    if (visible == 0) return;
+
+    for (i = 0; i < map->n_nodes; i++)
+    {
+        if (map->order[i] == map->selected) position = i;
+    }
+
+    if (position >= visible) first = position - visible + 1;
+    if (first > (int16_t)(map->n_nodes - visible)) first = map->n_nodes - visible;
+    if (first < 0) first = 0;
+
+    for (i = 0; i < visible; i++)
+    {
+        uint8_t index = map->order[first + i];
+        int16_t y = map->view.y + i * pitch;
+
+        glcd_text_clip(display, &clip, map->view.x + 2, y + 1,
+                       map->nodes[index].title, Terminal3x5, GLCD_BLACK);
+
+        if ((int16_t)(first + i) == position)
+        {
+            row.x = map->view.x;
+            row.y = y;
+            row.width = map->view.width;
+            row.height = pitch;
+            glcd_rect_invert_clip(display, &clip, &row);
+        }
+    }
+}
+
 void minimap_draw(glcd_t *display, const minimap_t *map)
+{
+    if (map && map->view_mode == MINIMAP_VIEW_LIST)
+    {
+        draw_list(display, map);
+        return;
+    }
+
+    minimap_draw_graph(display, map);
+}
+
+static void minimap_draw_graph(glcd_t *display, const minimap_t *map)
 {
     uint8_t i, j;
     int16_t dx, dy;
@@ -512,8 +728,9 @@ void minimap_draw(glcd_t *display, const minimap_t *map)
     }
 
     // Selection last, as an inversion of the whole box -- the one highlight a 1-bit panel does well,
-    // and another filled area, so again straight to the driver.
-    if (map->selected >= 0 && map->selected < map->n_nodes)
+    // and another filled area, so again straight to the driver. Held back for half of a
+    // blink when the box is armed for deletion, which is what makes it flash.
+    if (!map->blink_off && map->selected >= 0 && map->selected < map->n_nodes)
     {
         const minimap_node_t *node = &map->nodes[map->selected];
 

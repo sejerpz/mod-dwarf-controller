@@ -28,6 +28,7 @@
 #include "images.h"
 #include "uc1701.h"
 #include "mode_navigation.h"
+#include "mode_builder.h"
 #include "mode_tools.h"
 #include "LPC177x_8x.h"
 #include "memory_map.h"
@@ -265,6 +266,9 @@ static void displays_task(void *pvParameters)
     {
         // update GLCD
         glcd_update(hardware_glcds(0));
+
+        //a cable armed for deletion blinks; the builder needs a tick to do it
+        BM_tick();
 
         //check if nav mode needs update
         if (NM_get_need_update()){

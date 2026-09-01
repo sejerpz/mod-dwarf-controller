@@ -523,6 +523,9 @@ void naveg_enc_released(uint8_t encoder)
 
         NM_encoder_released(encoder);
     }
+
+    if (g_device_mode == MODE_BUILDER)
+        BM_encoder_released(encoder);
 }
 
 void naveg_enc_hold(uint8_t encoder)
@@ -542,6 +545,9 @@ void naveg_enc_hold(uint8_t encoder)
 
         NM_encoder_hold(encoder);
     }
+
+    if (g_device_mode == MODE_BUILDER)
+        BM_encoder_hold(encoder);
 
     if (g_self_test_mode)
         naveg_enc_enter(encoder);
@@ -837,7 +843,9 @@ void naveg_foot_change(uint8_t foot, uint8_t pressed)
         break;
 
         case MODE_BUILDER:
-            //not defined yet
+            // B and C choose how the board is drawn; the third foot is not ours
+            if (pressed)
+                BM_foot_change(foot);
         break;
 
         case MODE_SELFTEST:
