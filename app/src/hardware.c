@@ -15,7 +15,6 @@
 #include "device.h"
 #include "st7565p.h"
 #include "naveg.h"
-#include "logging.h"
 #include "memory_map.h"
 
 /*

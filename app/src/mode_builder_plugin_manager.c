@@ -14,7 +14,7 @@
 #include "protocol.h"
 #include "ui_comm.h"
 #include "utils.h"
-#include "minimap.h"
+#include "plugin_map.h"
 #include "screen.h"
 #include "mode_builder.h"
 #include "mode_builder_plugin_manager.h"
@@ -61,8 +61,11 @@
 static uint8_t g_open;
 
 /* what the notice says while the host is scanning; one edit changes both lines */
-static const char PM_NOTICE_FIRST[] = "READING PLUGIN LIST";
-static const char PM_NOTICE_SECOND[] = "FIRST TIME ONLY";
+/* Terminal3x5 is marked all caps in the font table, so this reads uppercase on the panel
+   whatever case it is written in here. The longer line is 111px, which is what the box
+   screen_notice() draws is sized to hold. */
+static const char PM_NOTICE_FIRST[] = "reading available plugins...";
+static const char PM_NOTICE_SECOND[] = "(first time only)";
 
 /*
  * The info overlay, which covers the two lists while it is up. Fetched on the button
@@ -171,14 +174,14 @@ static void parse_categories(void *data, menu_item_t *item)
         // a category is a name, not an id: the wire's underscores were spaces
         strncpy(g_category_text[g_category_count], entry[1], PM_LABEL_SIZE - 1);
         g_category_text[g_category_count][PM_LABEL_SIZE - 1] = 0;
-        minimap_unescape(g_category_text[g_category_count]);
+        plugin_map_unescape(g_category_text[g_category_count]);
         g_category_rows[g_category_count] = g_category_text[g_category_count];
 
         g_category_count++;
     }
 }
 
-static void parse_plugins(void *data, menu_item_t *item)
+static void parse_catalog(void *data, menu_item_t *item)
 {
     (void) item;
     char **list = data;
@@ -203,7 +206,7 @@ static void parse_plugins(void *data, menu_item_t *item)
 
         strncpy(g_plugin_text[g_plugin_count], entry[1], PM_LABEL_SIZE - 1);
         g_plugin_text[g_plugin_count][PM_LABEL_SIZE - 1] = 0;
-        minimap_unescape(g_plugin_text[g_plugin_count]);
+        plugin_map_unescape(g_plugin_text[g_plugin_count]);
         g_plugin_rows[g_plugin_count] = g_plugin_text[g_plugin_count];
 
         g_plugin_count++;
@@ -257,15 +260,15 @@ static void parse_info(void *data, menu_item_t *item)
 
     strncpy(g_info_name, list[2], PM_INFO_FIELD - 1);
     g_info_name[PM_INFO_FIELD - 1] = 0;
-    minimap_unescape(g_info_name);
+    plugin_map_unescape(g_info_name);
 
     strncpy(g_info_brand, list[3], PM_INFO_FIELD - 1);
     g_info_brand[PM_INFO_FIELD - 1] = 0;
-    minimap_unescape(g_info_brand);
+    plugin_map_unescape(g_info_brand);
 
     strncpy(g_info_category, list[4], PM_INFO_FIELD - 1);
     g_info_category[PM_INFO_FIELD - 1] = 0;
-    minimap_unescape(g_info_category);
+    plugin_map_unescape(g_info_category);
 
     for (i = 0; i < 6; i++)
         g_info_ports[i] = (uint8_t) atoi(list[5 + i]);
@@ -304,7 +307,7 @@ static void request_info(void)
     ui_comm_webgui_set_response_cb(parse_info, NULL);
     ui_comm_webgui_clear_tx_buffer();
 
-    i = copy_command((char *)buffer, CMD_DWARF_BUILDER_INFO);
+    i = copy_command((char *)buffer, CMD_BUILDER_CATALOG_INFO);
     i += int_to_str(g_category_hover, &buffer[i], sizeof(buffer) - i, 0);
     buffer[i++] = ' ';
     i += int_to_str(g_plugin_hover, &buffer[i], sizeof(buffer) - i, 0);
@@ -326,7 +329,7 @@ static void request_initials(void)
     ui_comm_webgui_set_response_cb(parse_initials, NULL);
     ui_comm_webgui_clear_tx_buffer();
 
-    i = copy_command((char *)buffer, CMD_DWARF_BUILDER_INITIALS);
+    i = copy_command((char *)buffer, CMD_BUILDER_CATALOG_INITIALS);
     i += int_to_str(g_category_hover, &buffer[i], sizeof(buffer) - i, 0);
     buffer[i++] = ' ';
     i += int_to_str(g_filter, &buffer[i], sizeof(buffer) - i, 0);
@@ -348,7 +351,7 @@ static void request_categories(void)
     ui_comm_webgui_set_response_cb(parse_categories, NULL);
     ui_comm_webgui_clear_tx_buffer();
 
-    i = copy_command((char *)buffer, CMD_DWARF_BUILDER_CATEGORIES);
+    i = copy_command((char *)buffer, CMD_BUILDER_CATALOG_CATEGORIES);
     i += int_to_str(g_filter, &buffer[i], sizeof(buffer) - i, 0);
     buffer[i++] = 0;
 
@@ -357,16 +360,16 @@ static void request_categories(void)
     wait_for_host();
 }
 
-static void request_plugins(uint16_t first)
+static void request_catalog(uint16_t first)
 {
     uint8_t i;
     char buffer[32];
     memset(buffer, 0, sizeof buffer);
 
-    ui_comm_webgui_set_response_cb(parse_plugins, NULL);
+    ui_comm_webgui_set_response_cb(parse_catalog, NULL);
     ui_comm_webgui_clear_tx_buffer();
 
-    i = copy_command((char *)buffer, CMD_DWARF_BUILDER_CATALOG);
+    i = copy_command((char *)buffer, CMD_BUILDER_CATALOG_LIST);
     i += int_to_str(g_category_hover, &buffer[i], sizeof(buffer) - i, 0);
     buffer[i++] = ' ';
     i += int_to_str(g_filter, &buffer[i], sizeof(buffer) - i, 0);
@@ -384,7 +387,7 @@ static void parse_added(void *data, menu_item_t *item)
     (void) item;
     char **list = data;
 
-    g_added = MINIMAP_NONE;
+    g_added = BM_NONE;
 
     if (!list || !list[0] || !list[1] || atoi(list[1]) == -1) return;
     if (!list[2]) return;
@@ -395,10 +398,10 @@ static void parse_added(void *data, menu_item_t *item)
 /*
  * The box the cursor was on when the list was opened. The server takes it as a hint: when
  * that box feeds exactly one other and the channels line up, the new plugin goes in
- * between the two and takes their cable over. MINIMAP_NONE asks for nothing of the sort,
+ * between the two and takes their cable over. BM_NONE asks for nothing of the sort,
  * and so does a case the server judges too tangled to guess at.
  */
-static int16_t g_anchor = MINIMAP_NONE;
+static int16_t g_anchor = BM_NONE;
 
 static int16_t request_add(void)
 {
@@ -406,12 +409,12 @@ static int16_t request_add(void)
     char buffer[40];
     memset(buffer, 0, sizeof buffer);
 
-    g_added = MINIMAP_NONE;
+    g_added = BM_NONE;
 
     ui_comm_webgui_set_response_cb(parse_added, NULL);
     ui_comm_webgui_clear_tx_buffer();
 
-    i = copy_command((char *)buffer, CMD_DWARF_BUILDER_ADD);
+    i = copy_command((char *)buffer, CMD_BUILDER_PLUGIN_ADD);
     i += int_to_str(g_category_hover, &buffer[i], sizeof(buffer) - i, 0);
     buffer[i++] = ' ';
     i += int_to_str(g_plugin_hover, &buffer[i], sizeof(buffer) - i, 0);
@@ -442,7 +445,7 @@ static void follow_hover(void)
         int16_t first = g_plugin_hover - (PM_MAX_ROWS / 2);
         if (first < 0) first = 0;
 
-        request_plugins((uint16_t) first);
+        request_catalog((uint16_t) first);
     }
 }
 
@@ -450,7 +453,7 @@ static void load_plugins(void)
 {
     g_plugin_hover = 0;
     g_initials_loaded = 0;      // a different list has different letters
-    request_plugins(0);
+    request_catalog(0);
 }
 
 
@@ -625,8 +628,8 @@ int16_t BM_plugin_manager_add(void)
 {
     int16_t added;
 
-    if (!g_open || g_info_open) return MINIMAP_NONE;
-    if (g_plugin_total == 0) return MINIMAP_NONE;
+    if (!g_open || g_info_open) return BM_NONE;
+    if (g_plugin_total == 0) return BM_NONE;
 
     added = request_add();
 
@@ -642,9 +645,9 @@ void BM_plugin_manager_filter(void)
     if (!g_open) return;
 
     // all -> audio -> midi -> cv
-    if (g_filter == 0) g_filter = MINIMAP_AUDIO;
-    else if (g_filter == MINIMAP_AUDIO) g_filter = MINIMAP_MIDI;
-    else if (g_filter == MINIMAP_MIDI) g_filter = MINIMAP_CV;
+    if (g_filter == 0) g_filter = BM_AUDIO;
+    else if (g_filter == BM_AUDIO) g_filter = BM_MIDI;
+    else if (g_filter == BM_MIDI) g_filter = BM_CV;
     else g_filter = 0;
 
     g_category_hover = 0;
@@ -717,9 +720,9 @@ void BM_plugin_manager_fill(plugin_manager_t *model)
     // the list widget works in rows it holds, so the hover is relative to the window
     model->plugin_hover = g_plugin_hover - (int16_t) g_plugin_first;
 
-    model->filter = (g_filter == MINIMAP_AUDIO) ? "AUDIO"
-                  : (g_filter == MINIMAP_MIDI) ? "MIDI"
-                  : (g_filter == MINIMAP_CV) ? "CV" : "ALL";
+    model->filter = (g_filter == BM_AUDIO) ? "AUDIO"
+                  : (g_filter == BM_MIDI) ? "MIDI"
+                  : (g_filter == BM_CV) ? "CV" : "ALL";
 
     if (g_scrubbing && g_scrub_at < (int16_t) g_initial_count)
     {

@@ -1,28 +1,28 @@
 /*
 ************************************************************************************************************************
-*           Host-side harness for app/src/minimap.c.
+*           Host-side harness for app/src/plugin_map.c.
 *
-*           Runs the firmware's minimap parser and renderer on a desktop against a display list read
+*           Runs the firmware's plugin_map parser and renderer on a desktop against a display list read
 *           from stdin, and prints the resulting panel as ASCII art. That makes it possible to check
 *           the firmware draws the same picture as the reference renderer on the mod-ui side without
 *           flashing anything.
 *
-*           The four driver entry points minimap.c uses are transcribed from drivers/src/st7565p.c so
+*           The four driver entry points plugin_map.c uses are transcribed from drivers/src/st7565p.c so
 *           the buffer behaviour matches the real panel exactly, including the way write_data() ORs
 *           into two pages when the baseline is not page aligned. Only the panel transfer is left out.
 *
 *           Two bounds checks below are deliberately NOT in the real driver: st7565p_text() does no
 *           clipping and write_data() indexes buffer[y / 8][x] after a y += 8 without checking. Here
 *           they shout on stderr instead of running off the buffer, so a clipping mistake in
-*           minimap.c shows up as a test failure rather than as silent corruption on the device.
+*           plugin_map.c shows up as a test failure rather than as silent corruption on the device.
 *
 *           Build and run:
 *               gcc -std=gnu99 -Wall -Wextra -Inxp-lpc -Iapp/inc -Idrivers/inc -Ifreertos/inc \
 *                   -Imod-controller-proto -Inxp-lpc/CMSISv2p00_LPC177x_8xLib/inc \
 *                   -Inxp-lpc/LPC177x_8xLib/inc \
-*                   test/minimap_host_test.c app/src/minimap.c app/src/glcd_clip.c \
-*                   -o /tmp/minimap_test
-*               curl -s "http://localhost:8888/pedalboard/minimap" | /tmp/minimap_test
+*                   test/plugin_map_host_test.c app/src/plugin_map.c app/src/glcd_clip.c \
+*                   -o /tmp/plugin_map_test
+*               curl -s "http://localhost:8888/pedalboard/plugin_map" | /tmp/plugin_map_test
 *
 *           Optional arguments: view_x view_y view_w view_h [selection] [offset_x offset_y]
 ************************************************************************************************************************
@@ -32,7 +32,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "minimap.h"
+#include "plugin_map.h"
 #include "fonts.h"
 
 #define BUFFER_SIZE 8192
@@ -273,25 +273,25 @@ static void dump(const st7565p_t *disp)
 int main(int argc, char **argv)
 {
     static st7565p_t display;
-    static minimap_t map;
+    static plugin_map_t map;
     static char text[BUFFER_SIZE];
 
     size_t length = fread(text, 1, sizeof(text) - 1, stdin);
     text[length] = 0;
 
     memset(&display, 0, sizeof(display));
-    minimap_init(&map);
+    plugin_map_init(&map);
 
     // let the caller carve out a title bar / footer the way the builder screen does
     if (argc >= 5)
     {
-        minimap_set_view(&map, (uint8_t)atoi(argv[1]), (uint8_t)atoi(argv[2]),
+        plugin_map_set_view(&map, (uint8_t)atoi(argv[1]), (uint8_t)atoi(argv[2]),
                          (uint8_t)atoi(argv[3]), (uint8_t)atoi(argv[4]));
     }
 
-    if (!minimap_parse(&map, text))
+    if (!plugin_map_parse(&map, text))
     {
-        fprintf(stderr, "minimap_parse failed: no usable header in %lu bytes\n",
+        fprintf(stderr, "plugin_map_parse failed: no usable header in %lu bytes\n",
                 (unsigned long)length);
         return 1;
     }
@@ -304,17 +304,17 @@ int main(int argc, char **argv)
 
     // a 5th argument of 0 drops the selection, so the output can be diffed against the mod-ui
     // reference renderer, which draws no highlight by default
-    if (argc >= 6 && atoi(argv[5]) == 0) map.selected = MINIMAP_NONE;
+    if (argc >= 6 && atoi(argv[5]) == 0) map.selected = BM_NONE;
 
     // explicit pan, so clipping can be exercised at every edge
     if (argc >= 8)
     {
         map.offset_x = 0;
         map.offset_y = 0;
-        minimap_scroll(&map, (int16_t)atoi(argv[6]), (int16_t)atoi(argv[7]));
+        plugin_map_scroll(&map, (int16_t)atoi(argv[6]), (int16_t)atoi(argv[7]));
     }
 
-    minimap_draw(&display, &map);
+    plugin_map_draw(&display, &map);
     dump(&display);
 
     return 0;

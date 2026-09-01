@@ -49,7 +49,7 @@ void BM_plugin_manager_fill_info(plugin_info_t *model);
 // call once, before anything else
 void BM_plugin_manager_init(void);
 
-// `anchor` is the box the cursor is on, or MINIMAP_NONE. The server may put the new
+// `anchor` is the box the cursor is on, or BM_NONE. The server may put the new
 // plugin inside the cable leaving it, so it has to be taken before the list covers it up.
 void BM_plugin_manager_open(int16_t anchor);
 uint8_t BM_plugin_manager_is_open(void);
@@ -59,13 +59,13 @@ void BM_plugin_manager_close(void);
 void BM_plugin_manager_turn(uint8_t encoder, int8_t step);
 
 // Clicking the plugin encoder adds it to the pedalboard. Returns the node id of the new
-// box, or MINIMAP_NONE when nothing was added -- the caller selects it on the graph.
+// box, or BM_NONE when nothing was added -- the caller selects it on the graph.
 // The second encoder's click: the info overlay, and the same click closes it again. Not
 // the add -- that is a button now, so a press cannot instantiate a plugin by accident
 // while the finger is still on the encoder that was scrolling the list.
 void BM_plugin_manager_click(uint8_t encoder);
 
-// The second button. Returns the box the plugin became, or MINIMAP_NONE; the screen has
+// The second button. Returns the box the plugin became, or BM_NONE; the screen has
 // closed itself either way, so check BM_plugin_manager_is_open() afterwards.
 int16_t BM_plugin_manager_add(void);
 

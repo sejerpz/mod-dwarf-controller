@@ -25,7 +25,7 @@
 
 #include <stdint.h>
 
-#include "minimap.h"
+#include "plugin_map.h"
 #include "screen.h"
 
 
@@ -40,7 +40,7 @@ void BM_conn_manager_init(void);
 
 // Opens on the box currently selected in `map`, keeping the pointer for as long as it is
 // open. Does nothing when there is no selection, so check BM_conn_manager_is_open() afterwards.
-void BM_conn_manager_open(minimap_t *map);
+void BM_conn_manager_open(plugin_map_t *map);
 uint8_t BM_conn_manager_is_open(void);
 
 // one step back through the lists, and out of the popup from the first of them

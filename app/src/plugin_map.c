@@ -7,7 +7,7 @@
 
 #include <string.h>
 
-#include "minimap.h"
+#include "plugin_map.h"
 #include "glcd_clip.h"
 #include "fonts.h"
 
@@ -88,7 +88,7 @@ static void read_token(const char **cursor, char *dest, uint8_t size)
 
     while (*p == ' ') p++;
 
-    while (*p && *p != ' ' && *p != MINIMAP_RECORD_SEP && *p != '\n' && *p != '\r')
+    while (*p && *p != ' ' && *p != PLUGIN_MAP_RECORD_SEP && *p != '\n' && *p != '\r')
     {
         if (i < (size - 1)) dest[i++] = *p;
         p++;
@@ -100,9 +100,9 @@ static void read_token(const char **cursor, char *dest, uint8_t size)
 
 static uint8_t type_from_char(char c)
 {
-    if (c == 'm') return MINIMAP_MIDI;
-    if (c == 'c') return MINIMAP_CV;
-    return MINIMAP_AUDIO;
+    if (c == 'm') return BM_MIDI;
+    if (c == 'c') return BM_CV;
+    return BM_AUDIO;
 }
 
 static int16_t clamp16(int16_t value, int16_t low, int16_t high)
@@ -119,22 +119,22 @@ static int16_t clamp16(int16_t value, int16_t low, int16_t high)
 ************************************************************************************************************************
 */
 
-void minimap_init(minimap_t *map)
+void plugin_map_init(plugin_map_t *map)
 {
     if (!map) return;
 
-    memset(map, 0, sizeof(minimap_t));
+    memset(map, 0, sizeof(plugin_map_t));
 
-    map->selected = MINIMAP_NONE;
-    map->focus_id = MINIMAP_NONE;
-    map->layers = MINIMAP_ALL_LAYERS;
+    map->selected = BM_NONE;
+    map->focus_id = BM_NONE;
+    map->layers = BM_ALL_LAYERS;
     map->view.x = 0;
     map->view.y = 0;
     map->view.width = DISPLAY_WIDTH;
     map->view.height = DISPLAY_HEIGHT;
 }
 
-void minimap_set_view(minimap_t *map, uint8_t x, uint8_t y, uint8_t width, uint8_t height)
+void plugin_map_set_view(plugin_map_t *map, uint8_t x, uint8_t y, uint8_t width, uint8_t height)
 {
     if (!map) return;
 
@@ -144,12 +144,19 @@ void minimap_set_view(minimap_t *map, uint8_t x, uint8_t y, uint8_t width, uint8
     map->view.height = height;
 }
 
-void minimap_set_blink(minimap_t *map, uint8_t off)
+void plugin_map_set_bypassed(plugin_map_t *map, int8_t index, uint8_t bypassed)
+{
+    if (!map || index < 0 || index >= map->n_nodes) return;
+
+    map->nodes[index].bypassed = bypassed;
+}
+
+void plugin_map_set_blink(plugin_map_t *map, uint8_t off)
 {
     if (map) map->blink_off = off;
 }
 
-void minimap_unescape(char *text)
+void plugin_map_unescape(char *text)
 {
     if (!text) return;
 
@@ -157,23 +164,23 @@ void minimap_unescape(char *text)
         if (*text == '_') *text = ' ';
 }
 
-int8_t minimap_index_of(const minimap_t *map, int16_t id)
+int8_t plugin_map_index_of(const plugin_map_t *map, int16_t id)
 {
     uint8_t i;
 
     // negative ids are real: hardware nodes live in the negative half of the id space. Only -1 is
     // reserved, as the "no node" sentinel, and no node ever carries it.
-    if (!map) return MINIMAP_NONE;
+    if (!map) return BM_NONE;
 
     for (i = 0; i < map->n_nodes; i++)
     {
         if (map->nodes[i].id == id) return (int8_t)i;
     }
 
-    return MINIMAP_NONE;
+    return BM_NONE;
 }
 
-uint8_t minimap_parse(minimap_t *map, const char *text)
+uint8_t plugin_map_parse(plugin_map_t *map, const char *text)
 {
     const char *line = text;
     uint8_t header_seen = 0;
@@ -199,7 +206,7 @@ uint8_t minimap_parse(minimap_t *map, const char *text)
 
         switch (record)
         {
-            case MINIMAP_REC_HEADER:
+            case PLUGIN_MAP_REC_HEADER:
             {
                 char mask[8];
 
@@ -209,9 +216,9 @@ uint8_t minimap_parse(minimap_t *map, const char *text)
 
                 read_token(&cursor, mask, sizeof(mask));
                 map->layers = 0;
-                if (strchr(mask, 'a')) map->layers |= MINIMAP_AUDIO;
-                if (strchr(mask, 'm')) map->layers |= MINIMAP_MIDI;
-                if (strchr(mask, 'c')) map->layers |= MINIMAP_CV;
+                if (strchr(mask, 'a')) map->layers |= BM_AUDIO;
+                if (strchr(mask, 'm')) map->layers |= BM_MIDI;
+                if (strchr(mask, 'c')) map->layers |= BM_CV;
 
                 map->focus_id = read_int(&cursor);
                 map->window_count = (uint8_t)read_int(&cursor);
@@ -221,11 +228,11 @@ uint8_t minimap_parse(minimap_t *map, const char *text)
                 break;
             }
 
-            case MINIMAP_REC_NODE:
+            case PLUGIN_MAP_REC_NODE:
             {
-                if (map->n_nodes >= MINIMAP_MAX_NODES) break;
+                if (map->n_nodes >= PLUGIN_MAP_MAX_NODES) break;
 
-                minimap_node_t *node = &map->nodes[map->n_nodes];
+                plugin_map_node_t *node = &map->nodes[map->n_nodes];
 
                 node->id = read_int(&cursor);
                 node->kind = (uint8_t)read_char(&cursor);
@@ -236,40 +243,40 @@ uint8_t minimap_parse(minimap_t *map, const char *text)
                 node->bypassed = (uint8_t)read_int(&cursor);
                 node->layer = (uint8_t)read_int(&cursor);
                 node->row = (uint8_t)read_int(&cursor);
-                read_token(&cursor, node->label, MINIMAP_LABEL_SIZE);
+                read_token(&cursor, node->label, PLUGIN_MAP_LABEL_SIZE);
 
                 // The title is the last field and mod-ui sends "=" when it would only
                 // repeat the label. An empty read means an older server that does not
                 // send it at all, which falls back the same way.
-                read_token(&cursor, node->title, MINIMAP_TITLE_SIZE);
+                read_token(&cursor, node->title, PLUGIN_MAP_TITLE_SIZE);
                 if (node->title[0] == 0 || (node->title[0] == '=' && node->title[1] == 0))
                 {
-                    strncpy(node->title, node->label, MINIMAP_TITLE_SIZE - 1);
-                    node->title[MINIMAP_TITLE_SIZE - 1] = 0;
+                    strncpy(node->title, node->label, PLUGIN_MAP_TITLE_SIZE - 1);
+                    node->title[PLUGIN_MAP_TITLE_SIZE - 1] = 0;
                 }
 
                 // both are names a person wrote, so the wire's underscores were spaces
-                minimap_unescape(node->label);
-                minimap_unescape(node->title);
+                plugin_map_unescape(node->label);
+                plugin_map_unescape(node->title);
 
-                node->prev = MINIMAP_NONE;
-                node->next = MINIMAP_NONE;
+                node->prev = BM_NONE;
+                node->next = BM_NONE;
 
                 map->n_nodes++;
                 break;
             }
 
-            case MINIMAP_REC_PORT:
+            case PLUGIN_MAP_REC_PORT:
             {
-                if (map->n_ports >= MINIMAP_MAX_PORTS) break;
+                if (map->n_ports >= PLUGIN_MAP_MAX_PORTS) break;
 
                 int16_t node_id = read_int(&cursor);
-                int8_t index = minimap_index_of(map, node_id);
+                int8_t index = plugin_map_index_of(map, node_id);
 
                 // ports arrive after their node; a port for an unknown node means a truncated payload
-                if (index == MINIMAP_NONE) break;
+                if (index == BM_NONE) break;
 
-                minimap_port_t *port = &map->ports[map->n_ports];
+                plugin_map_port_t *port = &map->ports[map->n_ports];
 
                 port->node = (uint8_t)index;
                 port->pid = (uint8_t)read_int(&cursor);
@@ -282,11 +289,11 @@ uint8_t minimap_parse(minimap_t *map, const char *text)
                 break;
             }
 
-            case MINIMAP_REC_EDGE:
+            case PLUGIN_MAP_REC_EDGE:
             {
-                if (map->n_edges >= MINIMAP_MAX_EDGES) break;
+                if (map->n_edges >= PLUGIN_MAP_MAX_EDGES) break;
 
-                minimap_edge_t *edge = &map->edges[map->n_edges];
+                plugin_map_edge_t *edge = &map->edges[map->n_edges];
                 char token[16];
 
                 read_int(&cursor);                      // edge id, not needed for drawing
@@ -298,16 +305,16 @@ uint8_t minimap_parse(minimap_t *map, const char *text)
                 edge->target_outside = (uint8_t)read_int(&cursor);
                 edge->n_points = 0;
 
-                while (*cursor && *cursor != MINIMAP_RECORD_SEP)
+                while (*cursor && *cursor != PLUGIN_MAP_RECORD_SEP)
                 {
                     while (*cursor == ' ') cursor++;
-                    if (!*cursor || *cursor == MINIMAP_RECORD_SEP) break;
+                    if (!*cursor || *cursor == PLUGIN_MAP_RECORD_SEP) break;
 
-                    if (edge->n_points >= MINIMAP_MAX_POINTS)
+                    if (edge->n_points >= PLUGIN_MAP_MAX_POINTS)
                     {
                         // skip the rest of the polyline; a cable longer than we can hold is drawn
                         // truncated rather than dropped
-                        while (*cursor && *cursor != MINIMAP_RECORD_SEP) cursor++;
+                        while (*cursor && *cursor != PLUGIN_MAP_RECORD_SEP) cursor++;
                         break;
                     }
 
@@ -321,14 +328,14 @@ uint8_t minimap_parse(minimap_t *map, const char *text)
                 break;
             }
 
-            case MINIMAP_REC_ADJACENCY:
+            case PLUGIN_MAP_REC_ADJACENCY:
             {
                 int16_t node_id = read_int(&cursor);
-                int8_t index = minimap_index_of(map, node_id);
+                int8_t index = plugin_map_index_of(map, node_id);
 
-                if (index == MINIMAP_NONE) break;
+                if (index == BM_NONE) break;
 
-                minimap_node_t *node = &map->nodes[index];
+                plugin_map_node_t *node = &map->nodes[index];
 
                 // kept as sent, not resolved to an index: the neighbour is often a box
                 // this window does not contain, and resolving here would lose it
@@ -342,46 +349,46 @@ uint8_t minimap_parse(minimap_t *map, const char *text)
         }
 
         // next record
-        while (*line && *line != MINIMAP_RECORD_SEP) line++;
-        if (*line == MINIMAP_RECORD_SEP) line++;
+        while (*line && *line != PLUGIN_MAP_RECORD_SEP) line++;
+        if (*line == PLUGIN_MAP_RECORD_SEP) line++;
     }
 
     if (!header_seen) return 0;
 
     // keep the selection pointing at the same plugin across a refetch; fall back to the focus mod-ui
     // used, then to the first node
-    if (map->selected >= map->n_nodes) map->selected = MINIMAP_NONE;
+    if (map->selected >= map->n_nodes) map->selected = BM_NONE;
 
-    if (map->selected == MINIMAP_NONE)
+    if (map->selected == BM_NONE)
     {
-        map->selected = minimap_index_of(map, map->focus_id);
+        map->selected = plugin_map_index_of(map, map->focus_id);
 
-        if (map->selected == MINIMAP_NONE && map->n_nodes > 0)
+        if (map->selected == BM_NONE && map->n_nodes > 0)
             map->selected = 0;
     }
 
-    if (map->selected != MINIMAP_NONE)
-        minimap_select(map, map->selected);
+    if (map->selected != BM_NONE)
+        plugin_map_select(map, map->selected);
 
     return 1;
 }
 
 /* whether the cursor is allowed to stop here; unfiltered, everything is */
-static uint8_t may_select(const minimap_t *map, int8_t index)
+static uint8_t may_select(const plugin_map_t *map, int8_t index)
 {
     if (!map->filtered) return 1;
     if (index < 0 || index >= map->n_nodes) return 0;
     return map->selectable[index];
 }
 
-int16_t minimap_step(const minimap_t *map, int8_t from, uint8_t direction)
+int16_t plugin_map_step(const plugin_map_t *map, int8_t from, uint8_t direction)
 {
-    if (!map || from < 0 || from >= map->n_nodes) return MINIMAP_NONE;
+    if (!map || from < 0 || from >= map->n_nodes) return BM_NONE;
 
-    if (map->view_mode == MINIMAP_VIEW_LIST)
+    if (map->view_mode == PLUGIN_MAP_VIEW_LIST)
     {
         // the list walks its own order, not the picture's
-        int16_t step = (direction == MINIMAP_NEXT) ? 1 : -1;
+        int16_t step = (direction == PLUGIN_MAP_NEXT) ? 1 : -1;
         int16_t at = -1;
         int16_t i;
 
@@ -390,7 +397,7 @@ int16_t minimap_step(const minimap_t *map, int8_t from, uint8_t direction)
             if (map->order[i] == from) at = i;
         }
 
-        if (at < 0) return MINIMAP_NONE;
+        if (at < 0) return BM_NONE;
 
         for (at += step; at >= 0 && at < map->n_nodes; at += step)
         {
@@ -398,7 +405,7 @@ int16_t minimap_step(const minimap_t *map, int8_t from, uint8_t direction)
                 return map->nodes[map->order[at]].id;
         }
 
-        return MINIMAP_NONE;
+        return BM_NONE;
     }
 
     /*
@@ -407,32 +414,32 @@ int16_t minimap_step(const minimap_t *map, int8_t from, uint8_t direction)
      * back as it is, because whether it may be picked is not knowable until it arrives.
      */
     {
-        int16_t id = (direction == MINIMAP_PREV) ? map->nodes[from].prev
-                   : (direction == MINIMAP_NEXT) ? map->nodes[from].next
-                   : MINIMAP_NONE;
+        int16_t id = (direction == PLUGIN_MAP_PREV) ? map->nodes[from].prev
+                   : (direction == PLUGIN_MAP_NEXT) ? map->nodes[from].next
+                   : BM_NONE;
 
-        while (id != MINIMAP_NONE)
+        while (id != BM_NONE)
         {
-            int8_t index = minimap_index_of(map, id);
+            int8_t index = plugin_map_index_of(map, id);
 
-            if (index == MINIMAP_NONE) return id;
+            if (index == BM_NONE) return id;
             if (may_select(map, index)) return id;
 
-            id = (direction == MINIMAP_PREV) ? map->nodes[index].prev
+            id = (direction == PLUGIN_MAP_PREV) ? map->nodes[index].prev
                                              : map->nodes[index].next;
         }
 
-        return MINIMAP_NONE;
+        return BM_NONE;
     }
 }
 
-void minimap_select(minimap_t *map, int8_t node)
+void plugin_map_select(plugin_map_t *map, int8_t node)
 {
     if (!map || node < 0 || node >= map->n_nodes) return;
 
     map->selected = node;
 
-    const minimap_node_t *n = &map->nodes[node];
+    const plugin_map_node_t *n = &map->nodes[node];
 
     /*
      * Horizontally, centred rather than scrolled the least we can get away with. mod-ui
@@ -450,7 +457,7 @@ void minimap_select(minimap_t *map, int8_t node)
      * of the path: the same pair was drawn several pixels apart depending on whether the
      * walk had passed the top row or the bottom one on the way.
      */
-    if (n->kind == MINIMAP_HW_SOURCE || n->kind == MINIMAP_HW_SINK)
+    if (n->kind == BM_HW_SOURCE || n->kind == BM_HW_SINK)
     {
         map->offset_y = (map->scene_height - map->view.height) / 2;
     }
@@ -471,10 +478,10 @@ void minimap_select(minimap_t *map, int8_t node)
         map->offset_y = n->rect.y + n->rect.height - map->view.height;
     }
 
-    minimap_scroll(map, 0, 0);
+    plugin_map_scroll(map, 0, 0);
 }
 
-void minimap_scroll(minimap_t *map, int16_t dx, int16_t dy)
+void plugin_map_scroll(plugin_map_t *map, int16_t dx, int16_t dy)
 {
     int16_t max_x, max_y, min_x, min_y;
 
@@ -498,13 +505,13 @@ void minimap_scroll(minimap_t *map, int16_t dx, int16_t dy)
     map->offset_y = clamp16(map->offset_y + dy, min_y, max_y);
 }
 
-const minimap_node_t *minimap_selected(const minimap_t *map)
+const plugin_map_node_t *plugin_map_selected(const plugin_map_t *map)
 {
     if (!map || map->selected < 0 || map->selected >= map->n_nodes) return 0;
     return &map->nodes[map->selected];
 }
 
-uint8_t minimap_has_offscreen_link(const minimap_t *map, int8_t node)
+uint8_t plugin_map_has_offscreen_link(const plugin_map_t *map, int8_t node)
 {
     uint8_t i;
 
@@ -512,7 +519,7 @@ uint8_t minimap_has_offscreen_link(const minimap_t *map, int8_t node)
 
     for (i = 0; i < map->n_edges; i++)
     {
-        const minimap_edge_t *edge = &map->edges[i];
+        const plugin_map_edge_t *edge = &map->edges[i];
 
         if (!(edge->type & map->layers)) continue;
         if (edge->source_outside || edge->target_outside) return 1;
@@ -521,13 +528,13 @@ uint8_t minimap_has_offscreen_link(const minimap_t *map, int8_t node)
     return 0;
 }
 
-static void minimap_draw_graph(glcd_t *display, const minimap_t *map);
+static void plugin_map_draw_graph(glcd_t *display, const plugin_map_t *map);
 
 /*
- * The nodes in alphabetical order. Insertion sort: at most MINIMAP_MAX_NODES of them, and
+ * The nodes in alphabetical order. Insertion sort: at most PLUGIN_MAP_MAX_NODES of them, and
  * it runs once when the mode is switched rather than on every draw.
  */
-static void build_order(minimap_t *map)
+static void build_order(plugin_map_t *map)
 {
     uint8_t i, j;
 
@@ -547,32 +554,32 @@ static void build_order(minimap_t *map)
     }
 }
 
-void minimap_set_view_mode(minimap_t *map, uint8_t mode)
+void plugin_map_set_view_mode(plugin_map_t *map, uint8_t mode)
 {
     if (!map) return;
 
     map->view_mode = mode;
 
-    if (mode == MINIMAP_VIEW_LIST)
+    if (mode == PLUGIN_MAP_VIEW_LIST)
         build_order(map);
 }
 
-void minimap_set_selectable(minimap_t *map, const int16_t *ids, uint8_t count)
+void plugin_map_set_selectable(plugin_map_t *map, const int16_t *ids, uint8_t count)
 {
     uint8_t i;
     int8_t index;
 
     if (!map) return;
 
-    for (i = 0; i < MINIMAP_MAX_NODES; i++) map->selectable[i] = 0;
+    for (i = 0; i < PLUGIN_MAP_MAX_NODES; i++) map->selectable[i] = 0;
 
     map->filtered = (count > 0);
     if (!map->filtered) return;
 
     for (i = 0; i < count; i++)
     {
-        index = minimap_index_of(map, ids[i]);
-        if (index != MINIMAP_NONE) map->selectable[index] = 1;
+        index = plugin_map_index_of(map, ids[i]);
+        if (index != BM_NONE) map->selectable[index] = 1;
     }
 }
 
@@ -581,7 +588,7 @@ void minimap_set_selectable(minimap_t *map, const int16_t *ids, uint8_t count)
  * around the selection, so finding a plugin is reading down a column rather than steering
  * across a picture.
  */
-static void draw_list(glcd_t *display, const minimap_t *map)
+static void draw_list(glcd_t *display, const plugin_map_t *map)
 {
     const uint8_t pitch = 7;
     glcd_rect_t clip = map->view;
@@ -623,18 +630,18 @@ static void draw_list(glcd_t *display, const minimap_t *map)
     }
 }
 
-void minimap_draw(glcd_t *display, const minimap_t *map)
+void plugin_map_draw(glcd_t *display, const plugin_map_t *map)
 {
-    if (map && map->view_mode == MINIMAP_VIEW_LIST)
+    if (map && map->view_mode == PLUGIN_MAP_VIEW_LIST)
     {
         draw_list(display, map);
         return;
     }
 
-    minimap_draw_graph(display, map);
+    plugin_map_draw_graph(display, map);
 }
 
-static void minimap_draw_graph(glcd_t *display, const minimap_t *map)
+static void plugin_map_draw_graph(glcd_t *display, const plugin_map_t *map)
 {
     uint8_t i, j;
     int16_t dx, dy;
@@ -653,14 +660,14 @@ static void minimap_draw_graph(glcd_t *display, const minimap_t *map)
     // cables first, so the boxes paint over them
     for (i = 0; i < map->n_edges; i++)
     {
-        const minimap_edge_t *edge = &map->edges[i];
+        const plugin_map_edge_t *edge = &map->edges[i];
         const glcd_dash_t *dash = 0;
-        int16_t px[MINIMAP_MAX_POINTS], py[MINIMAP_MAX_POINTS];
+        int16_t px[PLUGIN_MAP_MAX_POINTS], py[PLUGIN_MAP_MAX_POINTS];
 
         if (!(edge->type & map->layers)) continue;
 
-        if (edge->type == MINIMAP_MIDI) dash = &DASH_MIDI;
-        else if (edge->type == MINIMAP_CV) dash = &DASH_CV;
+        if (edge->type == BM_MIDI) dash = &DASH_MIDI;
+        else if (edge->type == BM_CV) dash = &DASH_CV;
 
         // translate the polyline onto the panel; the primitives never see scene coordinates
         for (j = 0; j < edge->n_points; j++)
@@ -691,7 +698,7 @@ static void minimap_draw_graph(glcd_t *display, const minimap_t *map)
     // boxes
     for (i = 0; i < map->n_nodes; i++)
     {
-        const minimap_node_t *node = &map->nodes[i];
+        const plugin_map_node_t *node = &map->nodes[i];
 
         rect.x = node->rect.x + dx;
         rect.y = node->rect.y + dy;
@@ -720,7 +727,7 @@ static void minimap_draw_graph(glcd_t *display, const minimap_t *map)
     // port stubs, drawn after the boxes so they sit on the border
     for (i = 0; i < map->n_ports; i++)
     {
-        const minimap_port_t *port = &map->ports[i];
+        const plugin_map_port_t *port = &map->ports[i];
 
         if (!(port->type & map->layers)) continue;
 
@@ -732,7 +739,7 @@ static void minimap_draw_graph(glcd_t *display, const minimap_t *map)
     // blink when the box is armed for deletion, which is what makes it flash.
     if (!map->blink_off && map->selected >= 0 && map->selected < map->n_nodes)
     {
-        const minimap_node_t *node = &map->nodes[map->selected];
+        const plugin_map_node_t *node = &map->nodes[map->selected];
 
         rect.x = node->rect.x + dx;
         rect.y = node->rect.y + dy;

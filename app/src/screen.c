@@ -17,7 +17,6 @@
 #include "mode_navigation.h"
 #include <string.h>
 #include <stdio.h>
-#include "logging.h"
 
 /*
 ************************************************************************************************************************
@@ -1906,15 +1905,15 @@ void screen_plugins_list(menu_item_t *item)
  * BUILDER: draw the pedalboard graph
  *
  * The chrome is the same as the plugin list it replaces -- title bar, outlines, three
- * button labels -- and the graph is drawn into the gap between them. minimap_draw()
+ * button labels -- and the graph is drawn into the gap between them. plugin_map_draw()
  * clips to the viewport mode_builder.c set, so nothing here can spill over the footer.
  */
-void screen_minimap(minimap_t *map, uint8_t loaded, uint8_t armed, uint8_t blink_reverse)
+void screen_plugin_map(plugin_map_t *map, uint8_t loaded, uint8_t armed, uint8_t blink_reverse)
 {
     glcd_t *display;
     display = hardware_glcds(0);
 
-    const minimap_node_t *node = loaded ? minimap_selected(map) : NULL;
+    const plugin_map_node_t *node = loaded ? plugin_map_selected(map) : NULL;
 
     // clear screen
     glcd_clear(display, GLCD_WHITE);
@@ -1946,7 +1945,7 @@ void screen_minimap(minimap_t *map, uint8_t loaded, uint8_t armed, uint8_t blink
      * box it would remove, the whole button the way print_menu_boxes() draws it, so the two
      * read as one thing about to happen.
      */
-    if (node && node->kind == MINIMAP_PLUGIN)
+    if (node && node->kind == BM_PLUGIN)
     {
         glcd_text(display, 92, DISPLAY_HEIGHT - 7, "DEL", Terminal3x5, GLCD_BLACK);
 
@@ -1956,7 +1955,7 @@ void screen_minimap(minimap_t *map, uint8_t loaded, uint8_t armed, uint8_t blink
 
     if (loaded && map->n_nodes > 0)
     {
-        minimap_draw(display, map);
+        plugin_map_draw(display, map);
     }
     else
     {
@@ -1977,10 +1976,10 @@ void screen_minimap(minimap_t *map, uint8_t loaded, uint8_t armed, uint8_t blink
      * pressed. The third foot is not ours and stays dark.
      */
     set_ledz_trigger_by_color_id(hardware_leds(0),
-                                 map->view_mode == MINIMAP_VIEW_LIST ? LED_OFF : LED_ON,
+                                 map->view_mode == PLUGIN_MAP_VIEW_LIST ? LED_OFF : LED_ON,
                                  led_state);
     set_ledz_trigger_by_color_id(hardware_leds(1),
-                                 map->view_mode == MINIMAP_VIEW_LIST ? LED_ON : LED_OFF,
+                                 map->view_mode == PLUGIN_MAP_VIEW_LIST ? LED_ON : LED_OFF,
                                  led_state);
 
     ledz_t* led = hardware_leds(3);
@@ -2261,14 +2260,14 @@ static void draw_offset_column(glcd_t *display, uint8_t x, uint8_t width, uint8_
 }
 
 /*
- * BUILDER: the minimap doing duty as a chooser
+ * BUILDER: the plugin_map doing duty as a chooser
  *
  * The same widget as the graph view, in whichever of its two modes, with the cursor
  * restricted to the boxes that could take the cable. Picking a destination by pointing at
  * it on the picture beats picking it off a list of names that says nothing about where it
  * sits -- and the list mode is there for when the name is what you know.
  */
-void screen_connection_pick(minimap_t *map, const char *title)
+void screen_connection_pick(plugin_map_t *map, const char *title)
 {
     glcd_t *display;
     display = hardware_glcds(0);
@@ -2293,7 +2292,7 @@ void screen_connection_pick(minimap_t *map, const char *title)
     // the same gesture as every other step of building a connection
     glcd_text(display, 52, DISPLAY_HEIGHT - 7, "SELECT", Terminal3x5, GLCD_BLACK);
 
-    minimap_draw(display, map);
+    plugin_map_draw(display, map);
 
     for (uint8_t i = 0; i < FOOTSWITCHES_COUNT; i++)
         ledz_off(hardware_leds(i), WHITE);
@@ -2303,10 +2302,10 @@ void screen_connection_pick(minimap_t *map, const char *title)
 
     // B and C read the board the two ways here too, and the lit one says which is on screen
     set_ledz_trigger_by_color_id(hardware_leds(0),
-                                 map->view_mode == MINIMAP_VIEW_LIST ? LED_OFF : LED_ON,
+                                 map->view_mode == PLUGIN_MAP_VIEW_LIST ? LED_OFF : LED_ON,
                                  led_state);
     set_ledz_trigger_by_color_id(hardware_leds(1),
-                                 map->view_mode == MINIMAP_VIEW_LIST ? LED_ON : LED_OFF,
+                                 map->view_mode == PLUGIN_MAP_VIEW_LIST ? LED_ON : LED_OFF,
                                  led_state);
 
     ledz_t* led = hardware_leds(3);
@@ -2701,8 +2700,13 @@ void screen_notice(const char *first, const char *second)
     uint8_t top = (DISPLAY_HEIGHT / 2) - (height / 2);
     uint8_t width;
 
-    glcd_rect_fill(display, 6, top, DISPLAY_WIDTH - 12, height, GLCD_WHITE);
-    glcd_rect(display, 6, top, DISPLAY_WIDTH - 12, height, GLCD_BLACK);
+    /*
+     * Wide enough for the longest notice, which is 111 pixels. Worth checking when one
+     * changes: glcd_text() does not clip -- st7565p_set_pixel() wraps -- so text wider
+     * than its box is not cut off at the edge, it reappears on the other side.
+     */
+    glcd_rect_fill(display, 4, top, DISPLAY_WIDTH - 8, height, GLCD_WHITE);
+    glcd_rect(display, 4, top, DISPLAY_WIDTH - 8, height, GLCD_BLACK);
 
     if (first)
     {

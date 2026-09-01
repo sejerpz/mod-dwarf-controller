@@ -1343,6 +1343,11 @@ void naveg_release_dialog_semaphore(void)
 
 void naveg_trigger_mode_change(uint8_t mode)
 {
+    // Every path out of the builder comes through here, which is where it gets told. The
+    // host is watching the board on its behalf and should stop the moment nobody is on it.
+    if (g_device_mode == MODE_BUILDER && mode != MODE_BUILDER)
+        BM_exit();
+
     //save to return
     g_prev_device_mode = g_device_mode;
 

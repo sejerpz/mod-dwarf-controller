@@ -54,8 +54,8 @@
 */
 
 static uint8_t g_open;
-static int16_t g_node = MINIMAP_NONE;
-static char g_title[MINIMAP_TITLE_SIZE];
+static int16_t g_node = BM_NONE;
+static char g_title[PLUGIN_MAP_TITLE_SIZE];
 
 /* column one: the box's control ports, a window at a time over a longer list */
 static char g_param_text[BB_MAX_PARAMS][BB_LABEL_SIZE];
@@ -82,7 +82,7 @@ static int16_t g_act_hover;
 static uint8_t g_act_taken[BB_MAX_ACTUATORS];
 
 /* the slot a bind took the parameter off, since a parameter holds one addressing */
-static int16_t g_freed = MINIMAP_NONE;
+static int16_t g_freed = BM_NONE;
 
 /* DEL is armed before it acts, and this is which half of the flash we are on */
 static uint8_t g_armed;
@@ -126,7 +126,7 @@ static void parse_actuators(void *data, menu_item_t *item)
 
         strncpy(g_act_text[g_act_count], list[3 + i], BB_LABEL_SIZE - 1);
         g_act_text[g_act_count][BB_LABEL_SIZE - 1] = 0;
-        minimap_unescape(g_act_text[g_act_count]);
+        plugin_map_unescape(g_act_text[g_act_count]);
 
         g_act_rows[g_act_count] = g_act_text[g_act_count];
         g_act_count++;
@@ -156,7 +156,7 @@ static void parse_params(void *data, menu_item_t *item)
 
         strncpy(g_param_text[g_param_count], list[5 + i], BB_LABEL_SIZE - 1);
         g_param_text[g_param_count][BB_LABEL_SIZE - 1] = 0;
-        minimap_unescape(g_param_text[g_param_count]);
+        plugin_map_unescape(g_param_text[g_param_count]);
 
         g_param_rows[g_param_count] = g_param_text[g_param_count];
         g_param_count++;
@@ -198,7 +198,7 @@ static void request_actuators(void)
     ui_comm_webgui_set_response_cb(parse_actuators, NULL);
     ui_comm_webgui_clear_tx_buffer();
 
-    i = copy_command((char *)buffer, CMD_DWARF_BUILDER_ACTUATORS);
+    i = copy_command((char *)buffer, CMD_BUILDER_BINDING_ACTUATORS);
     buffer[i++] = 0;
 
     ui_comm_webgui_send(buffer, i);
@@ -214,7 +214,7 @@ static void request_params(uint16_t first)
     ui_comm_webgui_set_response_cb(parse_params, NULL);
     ui_comm_webgui_clear_tx_buffer();
 
-    i = copy_command((char *)buffer, CMD_DWARF_BUILDER_PARAMS);
+    i = copy_command((char *)buffer, CMD_BUILDER_BINDING_PARAMS);
     i += int_to_str(g_node, &buffer[i], sizeof(buffer) - i, 0);
     buffer[i++] = ' ';
     i += int_to_str(first, &buffer[i], sizeof(buffer) - i, 0);
@@ -235,7 +235,7 @@ static void request_bindings(void)
     ui_comm_webgui_set_response_cb(parse_bindings, NULL);
     ui_comm_webgui_clear_tx_buffer();
 
-    i = copy_command((char *)buffer, CMD_DWARF_BUILDER_BINDINGS);
+    i = copy_command((char *)buffer, CMD_BUILDER_BINDING_LIST);
     i += int_to_str(g_page, &buffer[i], sizeof(buffer) - i, 0);
     buffer[i++] = 0;
 
@@ -254,7 +254,7 @@ static void parse_bind(void *data, menu_item_t *item)
     (void) item;
     char **list = data;
 
-    g_freed = MINIMAP_NONE;
+    g_freed = BM_NONE;
 
     if (!list || !list[0] || !list[1] || atoi(list[1]) == -1) return;
     if (!list[2] || !list[3]) return;
@@ -272,7 +272,7 @@ static void request_bind(int16_t param, int16_t actuator)
     ui_comm_webgui_set_response_cb(parse_bind, NULL);
     ui_comm_webgui_clear_tx_buffer();
 
-    i = copy_command((char *)buffer, CMD_DWARF_BUILDER_BIND);
+    i = copy_command((char *)buffer, CMD_BUILDER_BINDING_ADD);
     i += int_to_str(g_node, &buffer[i], sizeof(buffer) - i, 0);
     buffer[i++] = ' ';
     i += int_to_str(param, &buffer[i], sizeof(buffer) - i, 0);
@@ -295,7 +295,7 @@ static void request_unbind(int16_t actuator)
     ui_comm_webgui_set_response_cb(NULL, NULL);
     ui_comm_webgui_clear_tx_buffer();
 
-    i = copy_command((char *)buffer, CMD_DWARF_BUILDER_UNBIND);
+    i = copy_command((char *)buffer, CMD_BUILDER_BINDING_DELETE);
     i += int_to_str(g_page, &buffer[i], sizeof(buffer) - i, 0);
     buffer[i++] = ' ';
     i += int_to_str(actuator, &buffer[i], sizeof(buffer) - i, 0);
@@ -352,18 +352,18 @@ void BM_bindings_manager_init(void)
     build_page_title();
 }
 
-void BM_bindings_manager_open(minimap_t *map)
+void BM_bindings_manager_open(plugin_map_t *map)
 {
-    const minimap_node_t *node = map ? minimap_selected(map) : NULL;
+    const plugin_map_node_t *node = map ? plugin_map_selected(map) : NULL;
 
     // the capture and playback boxes are part of the picture and have nothing to bind
-    if (!node || node->kind != MINIMAP_PLUGIN) return;
+    if (!node || node->kind != BM_PLUGIN) return;
 
     g_open = 1;
     g_node = node->id;
 
-    strncpy(g_title, node->title, MINIMAP_TITLE_SIZE - 1);
-    g_title[MINIMAP_TITLE_SIZE - 1] = 0;
+    strncpy(g_title, node->title, PLUGIN_MAP_TITLE_SIZE - 1);
+    g_title[PLUGIN_MAP_TITLE_SIZE - 1] = 0;
 
     g_param_hover = 0;
     g_page = 0;

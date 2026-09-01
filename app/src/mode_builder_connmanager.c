@@ -12,7 +12,7 @@
 #include "protocol.h"
 #include "ui_comm.h"
 #include "utils.h"
-#include "minimap.h"
+#include "plugin_map.h"
 #include "screen.h"
 #include "mode_builder.h"
 #include "mode_builder_connmanager.h"
@@ -49,8 +49,8 @@
 
 typedef struct BM_CONNECTION_T {
     int16_t node;                   // wire id of the box at the far end
-    uint8_t direction;              // MINIMAP_PORT_IN when the cable comes into ours
-    uint8_t type;                   // MINIMAP_AUDIO / MINIMAP_MIDI / MINIMAP_CV
+    uint8_t direction;              // BM_PORT_IN when the cable comes into ours
+    uint8_t type;                   // BM_AUDIO / BM_MIDI / BM_CV
     char label[BM_CONN_LABEL_SIZE];
     uint8_t pair_first;             // where this row's cables start in g_pairs
     uint8_t pair_total;             // how many of them there are
@@ -106,7 +106,7 @@ static uint8_t g_pick_list;
 */
 
 /* the graph the popup sits on; borrowed from mode_builder for as long as it is open */
-static minimap_t *g_map;
+static plugin_map_t *g_map;
 static uint8_t g_open;
 
 /*
@@ -133,7 +133,7 @@ static uint8_t g_menu_count;
 static int16_t g_menu_hover;
 
 /* one type at a time, cycled by the second button; there is no "all" yet */
-static uint8_t g_filter = MINIMAP_AUDIO;
+static uint8_t g_filter = BM_AUDIO;
 
 /* the cable armed for deletion, and which half of its blink we are on */
 static int8_t g_armed = -1;
@@ -159,7 +159,7 @@ static void build_connection_menu(void)
     {
         for (i = 0; i < g_connection_count; i++)
         {
-            uint8_t incoming = (g_connections[i].direction == MINIMAP_PORT_IN);
+            uint8_t incoming = (g_connections[i].direction == BM_PORT_IN);
 
             if ((pass == 0) != incoming) continue;
 
@@ -239,9 +239,9 @@ static void parse_connections(void *data, menu_item_t *item)
              * under the list are symbols too, and are left alone for the same reason.
              */
             if (g_menu_mode == MENU_CABLES || g_menu_mode == MENU_TARGETS)
-                minimap_unescape(entry[3]);
+                plugin_map_unescape(entry[3]);
 
-            if (connection->direction == MINIMAP_PORT_IN)
+            if (connection->direction == BM_PORT_IN)
             {
                 strncpy(connection->label, entry[3], room);
                 connection->label[room] = 0;
@@ -277,11 +277,11 @@ static void request_menu(int16_t node_id)
     uint8_t ports_list = (g_menu_mode == MENU_OWN_PORT || g_menu_mode == MENU_TARGET_PORT);
 
     if (ports_list)
-        i = copy_command((char *)buffer, CMD_DWARF_BUILDER_PORTS);
+        i = copy_command((char *)buffer, CMD_BUILDER_CONNECTION_PORTS);
     else if (g_menu_mode == MENU_TARGETS)
-        i = copy_command((char *)buffer, CMD_DWARF_BUILDER_TARGETS);
+        i = copy_command((char *)buffer, CMD_BUILDER_CONNECTION_TARGETS);
     else
-        i = copy_command((char *)buffer, CMD_DWARF_BUILDER_CONNECTIONS);
+        i = copy_command((char *)buffer, CMD_BUILDER_CONNECTION_LIST);
 
     i += int_to_str(node_id, &buffer[i], sizeof(buffer) - i, 0);
     buffer[i++] = ' ';
@@ -330,10 +330,10 @@ static void request_disconnect(const bm_connection_t *connection, int16_t ours)
     memset(buffer, 0, sizeof buffer);
 
     // the command reads from -> to, so our own box goes on whichever end we are
-    int16_t from = (connection->direction == MINIMAP_PORT_IN) ? connection->node : ours;
-    int16_t to = (connection->direction == MINIMAP_PORT_IN) ? ours : connection->node;
+    int16_t from = (connection->direction == BM_PORT_IN) ? connection->node : ours;
+    int16_t to = (connection->direction == BM_PORT_IN) ? ours : connection->node;
 
-    i = copy_command((char *)buffer, CMD_DWARF_BUILDER_DISCONNECT);
+    i = copy_command((char *)buffer, CMD_BUILDER_CONNECTION_DELETE);
     i += int_to_str(from, &buffer[i], sizeof(buffer) - i, 0);
     buffer[i++] = ' ';
     i += int_to_str(to, &buffer[i], sizeof(buffer) - i, 0);
@@ -353,7 +353,7 @@ static void request_connect(int16_t ours, int16_t their_port)
     char buffer[56];
     memset(buffer, 0, sizeof buffer);
 
-    i = copy_command((char *)buffer, CMD_DWARF_BUILDER_CONNECT);
+    i = copy_command((char *)buffer, CMD_BUILDER_CONNECTION_ADD);
 
     // from -> to, with our box on whichever end our own port put it
     i += int_to_str(g_own_is_output ? ours : g_target.node, &buffer[i], sizeof(buffer) - i, 0);
@@ -372,8 +372,8 @@ static void request_connect(int16_t ours, int16_t their_port)
 
 static int16_t selected_node_id(void)
 {
-    const minimap_node_t *node = g_map ? minimap_selected(g_map) : NULL;
-    return node ? node->id : MINIMAP_NONE;
+    const plugin_map_node_t *node = g_map ? plugin_map_selected(g_map) : NULL;
+    return node ? node->id : BM_NONE;
 }
 
 /*
@@ -397,7 +397,7 @@ static void connection_arm(int8_t index)
 
 static void open_connections(void)
 {
-    const minimap_node_t *node = g_map ? minimap_selected(g_map) : NULL;
+    const plugin_map_node_t *node = g_map ? plugin_map_selected(g_map) : NULL;
 
     g_ours = selected_node_id();
 
@@ -497,7 +497,7 @@ static void do_connect(int16_t their_port)
 {
     int16_t ours = g_ours;
 
-    if (ours == MINIMAP_NONE) return;
+    if (ours == BM_NONE) return;
 
     request_connect(ours, their_port);
 
@@ -530,14 +530,14 @@ static void release_picker(void)
 {
     int8_t index;
 
-    minimap_set_selectable(g_map, NULL, 0);
-    minimap_set_view_mode(g_map, MINIMAP_VIEW_GRAPH);
+    plugin_map_set_selectable(g_map, NULL, 0);
+    plugin_map_set_view_mode(g_map, PLUGIN_MAP_VIEW_GRAPH);
 
     // back to the box the popup is about, cursor and window both
     BM_refresh_graph(g_ours);
 
-    index = minimap_index_of(g_map, g_ours);
-    if (index != MINIMAP_NONE) minimap_select(g_map, index);
+    index = plugin_map_index_of(g_map, g_ours);
+    if (index != BM_NONE) plugin_map_select(g_map, index);
 }
 
 /*
@@ -559,27 +559,27 @@ static void enter_targets(void)
     for (i = 0; i < g_connection_count; i++)
         ids[i] = g_connections[i].node;
 
-    minimap_set_selectable(g_map, ids, g_connection_count);
-    minimap_set_view_mode(g_map, g_pick_list ? MINIMAP_VIEW_LIST : MINIMAP_VIEW_GRAPH);
+    plugin_map_set_selectable(g_map, ids, g_connection_count);
+    plugin_map_set_view_mode(g_map, g_pick_list ? PLUGIN_MAP_VIEW_LIST : PLUGIN_MAP_VIEW_GRAPH);
 
 
     // land on something pickable; a candidate outside this window is fetched to reach it
     if (g_connection_count > 0)
     {
-        int8_t index = minimap_index_of(g_map, ids[0]);
+        int8_t index = plugin_map_index_of(g_map, ids[0]);
 
 
-        if (index == MINIMAP_NONE)
+        if (index == BM_NONE)
         {
             BM_refresh_graph(ids[0]);
-            minimap_set_selectable(g_map, ids, g_connection_count);
-            minimap_set_view_mode(g_map, g_pick_list ? MINIMAP_VIEW_LIST
-                                                     : MINIMAP_VIEW_GRAPH);
-            index = minimap_index_of(g_map, ids[0]);
+            plugin_map_set_selectable(g_map, ids, g_connection_count);
+            plugin_map_set_view_mode(g_map, g_pick_list ? PLUGIN_MAP_VIEW_LIST
+                                                     : PLUGIN_MAP_VIEW_GRAPH);
+            index = plugin_map_index_of(g_map, ids[0]);
         }
 
 
-        if (index != MINIMAP_NONE) minimap_select(g_map, index);
+        if (index != BM_NONE) plugin_map_select(g_map, index);
     }
 }
 
@@ -589,21 +589,21 @@ static void enter_targets(void)
  */
 static void picker_move(int8_t step)
 {
-    const minimap_node_t *node = minimap_selected(g_map);
+    const plugin_map_node_t *node = plugin_map_selected(g_map);
     int16_t target;
     int8_t index;
 
     if (!node) return;
 
-    index = minimap_index_of(g_map, node->id);
-    if (index == MINIMAP_NONE) return;
+    index = plugin_map_index_of(g_map, node->id);
+    if (index == BM_NONE) return;
 
-    target = minimap_step(g_map, index, (step < 0) ? MINIMAP_PREV : MINIMAP_NEXT);
-    if (target == MINIMAP_NONE) return;
+    target = plugin_map_step(g_map, index, (step < 0) ? PLUGIN_MAP_PREV : PLUGIN_MAP_NEXT);
+    if (target == BM_NONE) return;
 
-    index = minimap_index_of(g_map, target);
+    index = plugin_map_index_of(g_map, target);
 
-    if (index == MINIMAP_NONE)
+    if (index == BM_NONE)
     {
         int16_t ids[BM_MAX_CONNECTIONS];
         uint8_t i;
@@ -611,14 +611,14 @@ static void picker_move(int8_t step)
         for (i = 0; i < g_connection_count; i++) ids[i] = g_connections[i].node;
 
         BM_refresh_graph(target);
-        minimap_set_selectable(g_map, ids, g_connection_count);
-        minimap_set_view_mode(g_map, g_pick_list ? MINIMAP_VIEW_LIST : MINIMAP_VIEW_GRAPH);
+        plugin_map_set_selectable(g_map, ids, g_connection_count);
+        plugin_map_set_view_mode(g_map, g_pick_list ? PLUGIN_MAP_VIEW_LIST : PLUGIN_MAP_VIEW_GRAPH);
 
-        index = minimap_index_of(g_map, target);
-        if (index == MINIMAP_NONE) return;
+        index = plugin_map_index_of(g_map, target);
+        if (index == BM_NONE) return;
     }
 
-    minimap_select(g_map, index);
+    plugin_map_select(g_map, index);
 }
 
 /*
@@ -626,13 +626,13 @@ static void picker_move(int8_t step)
  */
 static void picker_click(void)
 {
-    const minimap_node_t *node = minimap_selected(g_map);
+    const plugin_map_node_t *node = plugin_map_selected(g_map);
 
     if (!node) return;
 
     g_target.node = node->id;
     g_target.type = g_own_bits;
-    g_target.direction = g_own_is_output ? MINIMAP_PORT_OUT : MINIMAP_PORT_IN;
+    g_target.direction = g_own_is_output ? BM_PORT_OUT : BM_PORT_IN;
     strncpy(g_target.label, node->title, BM_CONN_LABEL_SIZE - 1);
     g_target.label[BM_CONN_LABEL_SIZE - 1] = 0;
 
@@ -648,8 +648,8 @@ static void pick_own_port(int8_t index)
     g_own_port = g_connections[index].node;
     g_own_bits = g_connections[index].type;
 
-    // the list marks a port that feeds with MINIMAP_PORT_IN, which is our output
-    g_own_is_output = (g_connections[index].direction == MINIMAP_PORT_IN);
+    // the list marks a port that feeds with BM_PORT_IN, which is our output
+    g_own_is_output = (g_connections[index].direction == BM_PORT_IN);
 
     strncpy(g_own_label, g_connections[index].label, BM_CONN_LABEL_SIZE - 1);
     g_own_label[BM_CONN_LABEL_SIZE - 1] = 0;
@@ -771,9 +771,9 @@ static void connection_cycle_filter(void)
 {
 
     // audio -> midi -> cv -> audio; there is no "all" yet
-    if (g_filter == MINIMAP_AUDIO) g_filter = MINIMAP_MIDI;
-    else if (g_filter == MINIMAP_MIDI) g_filter = MINIMAP_CV;
-    else g_filter = MINIMAP_AUDIO;
+    if (g_filter == BM_AUDIO) g_filter = BM_MIDI;
+    else if (g_filter == BM_MIDI) g_filter = BM_CV;
+    else g_filter = BM_AUDIO;
 
     connection_disarm();
     g_menu_hover = 0;
@@ -786,7 +786,7 @@ static void connection_delete(void)
     bm_connection_t dropped;
 
     if (g_menu_mode != MENU_CABLES) return;
-    if (g_armed < 0 || g_armed >= g_connection_count || ours == MINIMAP_NONE) return;
+    if (g_armed < 0 || g_armed >= g_connection_count || ours == BM_NONE) return;
 
     // keep a copy: the refetch below rebuilds the list under us
     dropped = g_connections[g_armed];
@@ -812,17 +812,17 @@ void BM_conn_manager_init(void)
 {
     g_map = NULL;
     g_open = 0;
-    g_filter = MINIMAP_AUDIO;
+    g_filter = BM_AUDIO;
     connection_disarm();
 }
 
-void BM_conn_manager_open(minimap_t *map)
+void BM_conn_manager_open(plugin_map_t *map)
 {
     if (!map) return;
 
     g_map = map;
 
-    if (selected_node_id() == MINIMAP_NONE) return;
+    if (selected_node_id() == BM_NONE) return;
 
     g_open = 1;
     open_connections();
@@ -887,7 +887,7 @@ void BM_conn_manager_view(uint8_t list)
     if (!g_open || g_menu_mode != MENU_TARGETS) return;
 
     g_pick_list = list;
-    minimap_set_view_mode(g_map, list ? MINIMAP_VIEW_LIST : MINIMAP_VIEW_GRAPH);
+    plugin_map_set_view_mode(g_map, list ? PLUGIN_MAP_VIEW_LIST : PLUGIN_MAP_VIEW_GRAPH);
 }
 
 void BM_conn_manager_pairs_turn(int8_t step)
@@ -935,8 +935,8 @@ void BM_conn_manager_fill(connections_t *model)
     model->rows = g_menu_rows;
     model->count = g_menu_count;
     model->hover = g_menu_hover;
-    model->filter = (g_filter == MINIMAP_MIDI) ? "MIDI"
-                  : (g_filter == MINIMAP_CV) ? "CV" : "AUDIO";
+    model->filter = (g_filter == BM_MIDI) ? "MIDI"
+                  : (g_filter == BM_CV) ? "CV" : "AUDIO";
     model->can_delete = (g_armed >= 0) && (g_menu_mode == MENU_CABLES);
     model->can_add = (g_armed < 0) && (g_menu_mode == MENU_CABLES);
     model->can_select = (g_menu_mode == MENU_OWN_PORT || g_menu_mode == MENU_TARGET_PORT);

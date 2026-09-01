@@ -4,25 +4,25 @@
 *
 *           mode_builder.c does not get the display list as one string: protocol.c splits every
 *           incoming message on spaces before the response callback sees it, and the display list
-*           is full of spaces. parse_minimap() puts them back in place rather than copying 3.5kB
+*           is full of spaces. parse_plugin_map() puts them back in place rather than copying 3.5kB
 *           into a second buffer, which only works because strarr_split() writes its separators
 *           over the original text and leaves the tokens contiguous.
 *
 *           This reads a display list on stdin, runs it through that split and rejoin, and checks
-*           the text comes back byte for byte -- and that minimap_parse() then draws exactly the
+*           the text comes back byte for byte -- and that plugin_map_parse() then draws exactly the
 *           same panel as it does from the untouched original.
 *
 *           strarr_split() and parse_quote() are transcribed from app/src/utils.c, the same way
-*           test/minimap_host_test.c transcribes the ST7565P driver: the real ones pull in
+*           test/plugin_map_host_test.c transcribes the ST7565P driver: the real ones pull in
 *           FreeRTOS, screen.h and hardware.h and do not build on a host.
 *
 *           Build and run:
 *               gcc -std=gnu99 -Wall -Wextra -Inxp-lpc -Iapp/inc -Idrivers/inc -Ifreertos/inc \
 *                   -Imod-controller-proto -Inxp-lpc/CMSISv2p00_LPC177x_8xLib/inc \
 *                   -Inxp-lpc/LPC177x_8xLib/inc \
-*                   test/minimap_split_test.c app/src/minimap.c app/src/glcd_clip.c \
-*                   -o /tmp/minimap_split
-*               curl -s "http://localhost:8888/pedalboard/minimap" | /tmp/minimap_split
+*                   test/plugin_map_split_test.c app/src/plugin_map.c app/src/glcd_clip.c \
+*                   -o /tmp/plugin_map_split
+*               curl -s "http://localhost:8888/pedalboard/plugin_map" | /tmp/plugin_map_split
 ************************************************************************************************************************
 */
 
@@ -30,18 +30,18 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "minimap.h"
+#include "plugin_map.h"
 
 #define BUFFER_SIZE 8192
 
-// utils.h, pulled in through minimap.h -> glcd.h -> config.h, already turns this on
+// utils.h, pulled in through plugin_map.h -> glcd.h -> config.h, already turns this on
 
 
 /*
 ************************************************************************************************************************
 *           DRIVER STUBS
 *
-*           Nothing is drawn here: this test only compares what minimap_parse() built, so the
+*           Nothing is drawn here: this test only compares what plugin_map_parse() built, so the
 *           primitives glcd_clip.c calls just need to link.
 ************************************************************************************************************************
 */
@@ -165,7 +165,7 @@ char** strarr_split(char *str, const char token)
 ************************************************************************************************************************
 */
 
-// the loop from mode_builder.c parse_minimap(), kept identical on purpose
+// the loop from mode_builder.c parse_plugin_map(), kept identical on purpose
 static void rejoin(char **list, uint32_t first)
 {
     uint32_t i;
@@ -176,12 +176,12 @@ static void rejoin(char **list, uint32_t first)
 
 static int compare_parse(const char *original, const char *rejoined)
 {
-    static minimap_t a, b;
+    static plugin_map_t a, b;
 
-    minimap_init(&a);
-    minimap_init(&b);
+    plugin_map_init(&a);
+    plugin_map_init(&b);
 
-    if (minimap_parse(&a, original) != minimap_parse(&b, rejoined))
+    if (plugin_map_parse(&a, original) != plugin_map_parse(&b, rejoined))
     {
         fprintf(stderr, "FAIL: one text parses and the other does not\n");
         return 1;
@@ -194,7 +194,7 @@ static int compare_parse(const char *original, const char *rejoined)
         return 1;
     }
 
-    if (memcmp(&a, &b, sizeof(minimap_t)) != 0)
+    if (memcmp(&a, &b, sizeof(plugin_map_t)) != 0)
     {
         fprintf(stderr, "FAIL: parsed scenes are not identical\n");
         return 1;

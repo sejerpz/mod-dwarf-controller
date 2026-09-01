@@ -76,6 +76,17 @@ void BM_print_screen(void);
 // re-fetches the graph around `focus`, after an edit changed it
 void BM_refresh_graph(int16_t focus);
 
+// The host says the board has changed under us. Only raises a flag: the refetch is a
+// command, and a callback of a received command cannot send one.
+void BM_plugin_map_stale(void);
+
+// Drop the board watch without telling the host, for the paths that leave the builder from
+// inside a protocol callback where nothing may be sent.
+void BM_forget_watch(void);
+
+// Called when the panel leaves the builder, from every path that leaves it.
+void BM_exit(void);
+
 // Footswitch B and C over the board: the picture, or the same board as a list. Ignored
 // anywhere else in the builder, where the panel belongs to something else.
 void BM_foot_change(uint8_t foot);

@@ -22,8 +22,8 @@
 *               driver's inverse-video trick, and blits pixel by pixel so a partially visible string
 *               draws its visible part.
 *
-*           These live under app/ rather than in drivers/ for now, while the pedalboard minimap that
-*           drives their design is still being built. Nothing here depends on the minimap; when the
+*           These live under app/ rather than in drivers/ for now, while the pedalboard plugin_map that
+*           drives their design is still being built. Nothing here depends on the plugin_map; when the
 *           set settles it can move next to the driver unchanged.
 ************************************************************************************************************************
 */

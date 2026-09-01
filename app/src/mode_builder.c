@@ -21,7 +21,7 @@
 #include "screen.h"
 #include "ui_comm.h"
 #include "mode_builder.h"
-#include "minimap.h"
+#include "plugin_map.h"
 #include "mode_builder_connmanager.h"
 #include "mode_builder_plugin_manager.h"
 #include "mode_builder_bindings_manager.h"
@@ -31,11 +31,11 @@
 *           LOCAL DEFINES
 ************************************************************************************************************************
 */
-// the minimap viewport: inside the outlines print_menu_outlines() draws, above the footer
-#define MINIMAP_VIEW_X 2
-#define MINIMAP_VIEW_Y 9
-#define MINIMAP_VIEW_W 124
-#define MINIMAP_VIEW_H 43
+// the plugin_map viewport: inside the outlines print_menu_outlines() draws, above the footer
+#define PLUGIN_MAP_VIEW_X 2
+#define PLUGIN_MAP_VIEW_Y 9
+#define PLUGIN_MAP_VIEW_W 124
+#define PLUGIN_MAP_VIEW_H 43
 
 #define PAGE_DIR_DOWN 0
 #define PAGE_DIR_UP 1
@@ -87,14 +87,14 @@ static bool g_list_click = 0;
 
 /*
  * The pedalboard graph, as mod-ui described it. Not a bitmap: the server sends a display
- * list of boxes, port stubs and cables in scene coordinates and minimap.c draws it with
+ * list of boxes, port stubs and cables in scene coordinates and plugin_map.c draws it with
  * the GLCD primitives, because a pannable bitmap would be ~65kB on a part with 96kB of
  * SRAM. The same records are the hit map: the rect of a box is both what gets drawn and
  * what gets selected.
  */
-static minimap_t g_minimap;
-static uint8_t g_minimap_loaded = 0;
-/* the selected plugin's instance id as text, for CMD_DWARF_BUILDER_CONTROLS */
+static plugin_map_t g_plugin_map;
+static uint8_t g_plugin_map_loaded = 0;
+/* the selected plugin's instance id as text, for CMD_BUILDER_CONTROL_LIST */
 static char g_selected_uid[12];
 
 
@@ -139,7 +139,7 @@ static void encoder_control_add(control_t *control);
 static void encoder_control_rm(uint8_t hw_id);
 static void reset_list_encoders(void);
 static void clone_list_encoders(control_t *control);
-static void request_minimap(int16_t focus_id, uint8_t initial);
+static void request_plugin_map(int16_t focus_id, uint8_t initial);
 static void request_control_page(control_t *control, uint8_t dir);
 static void send_control_set(control_t *control);
 
@@ -357,13 +357,13 @@ static void clone_list_encoders(control_t *control)
  * Pedalboard graph navigation
  */
 
-static void parse_minimap(void *data, menu_item_t *item)
+static void parse_plugin_map(void *data, menu_item_t *item)
 {
     (void) item;
     char **list = data;
     uint32_t i;
 
-    g_minimap_loaded = 0;
+    g_plugin_map_loaded = 0;
 
     //error, dont parse when mod-ui gives error
     if (!list || !list[0] || !list[1] || atoi(list[1]) == -1)
@@ -382,22 +382,22 @@ static void parse_minimap(void *data, menu_item_t *item)
     for (i = 2; list[i + 1] != NULL; i++)
         list[i][strlen(list[i])] = ' ';
 
-    g_minimap_loaded = minimap_parse(&g_minimap, list[2]);
+    g_plugin_map_loaded = plugin_map_parse(&g_plugin_map, list[2]);
 
-    if (g_minimap_loaded)
+    if (g_plugin_map_loaded)
     {
         /* mod-ui centred the window on the node we asked for, so carry the selection over */
-        int8_t focus = minimap_index_of(&g_minimap, g_minimap.focus_id);
+        int8_t focus = plugin_map_index_of(&g_plugin_map, g_plugin_map.focus_id);
 
-        if (focus == MINIMAP_NONE)
+        if (focus == BM_NONE)
         {
-            g_minimap.selected = MINIMAP_NONE;
-            if (g_minimap.n_nodes > 0)
-                minimap_select(&g_minimap, 0);
+            g_plugin_map.selected = BM_NONE;
+            if (g_plugin_map.n_nodes > 0)
+                plugin_map_select(&g_plugin_map, 0);
         }
         else
         {
-            minimap_select(&g_minimap, focus);
+            plugin_map_select(&g_plugin_map, focus);
         }
     }
 }
@@ -405,20 +405,20 @@ static void parse_minimap(void *data, menu_item_t *item)
 /*
  * ask for the window of the pedalboard graph around <focus_id>
  */
-static void request_minimap(int16_t focus_id, uint8_t initial)
+static void request_plugin_map(int16_t focus_id, uint8_t initial)
 {
     uint8_t i;
     char buffer[32];
     memset(buffer, 0, sizeof buffer);
 
     // sets the response callback
-    ui_comm_webgui_set_response_cb(parse_minimap, NULL);
+    ui_comm_webgui_set_response_cb(parse_plugin_map, NULL);
     //clear the buffer
     ui_comm_webgui_clear_tx_buffer();
 
-    // send command minimap
+    // send command plugin_map
     // response: "r 1 M 392 124 7 amc 3 12 40 ; N 3 p 12 20 30 12 0 0 0 REVERB ; ..."
-    i = copy_command((char *)buffer, CMD_DWARF_BUILDER_MINIMAP);
+    i = copy_command((char *)buffer, CMD_BUILDER_PLUGIN_MAP);
 
     uint8_t bitmask = 0;
     if (initial)
@@ -465,7 +465,7 @@ static void del_disarm(void)
 {
     g_del_armed = 0;
     g_del_off = 0;
-    minimap_set_blink(&g_minimap, 0);
+    plugin_map_set_blink(&g_plugin_map, 0);
 }
 
 static void request_remove(int16_t node_id)
@@ -476,7 +476,7 @@ static void request_remove(int16_t node_id)
 
     ui_comm_webgui_clear_tx_buffer();
 
-    i = copy_command((char *)buffer, CMD_DWARF_BUILDER_REMOVE);
+    i = copy_command((char *)buffer, CMD_BUILDER_PLUGIN_DELETE);
     i += int_to_str(node_id, &buffer[i], sizeof(buffer) - i, 0);
     buffer[i++] = 0;
 
@@ -484,13 +484,59 @@ static void request_remove(int16_t node_id)
     ui_comm_webgui_wait_response();
 }
 
-static void minimap_delete_plugin(void)
+/*
+ * The host answers with the state the box lands in, before it has made the change: a
+ * bypass addressed to this panel sends it commands of its own, and it cannot serve one
+ * while it is spinning here.
+ */
+static int8_t g_bypass_state = BM_NONE;
+
+static void parse_bypass(void *data, menu_item_t *item)
 {
-    const minimap_node_t *node = minimap_selected(&g_minimap);
+    (void) item;
+    char **list = data;
+
+    g_bypass_state = BM_NONE;
+
+    if (!list || !list[0] || !list[1] || atoi(list[1]) == -1) return;
+    if (!list[2]) return;
+
+    g_bypass_state = (int8_t) atoi(list[2]);
+}
+
+static void plugin_map_toggle_bypass(void)
+{
+    const plugin_map_node_t *node = plugin_map_selected(&g_plugin_map);
+    uint8_t i;
+    char buffer[24];
+
+    // the capture and playback boxes are drawn like the rest but have nothing to turn off
+    if (!node || node->kind != BM_PLUGIN) return;
+
+    memset(buffer, 0, sizeof buffer);
+
+    ui_comm_webgui_set_response_cb(parse_bypass, NULL);
+    ui_comm_webgui_clear_tx_buffer();
+
+    i = copy_command((char *)buffer, CMD_BUILDER_PLUGIN_BYPASS);
+    i += int_to_str(node->id, &buffer[i], sizeof(buffer) - i, 0);
+    buffer[i++] = 0;
+
+    ui_comm_webgui_send(buffer, i);
+    ui_comm_webgui_wait_response();
+
+    if (g_bypass_state != BM_NONE)
+        plugin_map_set_bypassed(&g_plugin_map, g_plugin_map.selected,
+                                (uint8_t) g_bypass_state);
+}
+
+static void plugin_map_delete_plugin(void)
+{
+    const plugin_map_node_t *node = plugin_map_selected(&g_plugin_map);
     int16_t landing;
 
     // the capture and playback boxes are drawn like the rest but are not on the board
-    if (!node || node->kind != MINIMAP_PLUGIN)
+    if (!node || node->kind != BM_PLUGIN)
     {
         del_disarm();
         return;
@@ -505,7 +551,7 @@ static void minimap_delete_plugin(void)
     }
 
     // somewhere to stand once the box under the cursor is gone
-    landing = (node->next != MINIMAP_NONE) ? node->next : node->prev;
+    landing = (node->next != BM_NONE) ? node->next : node->prev;
 
     request_remove(node->id);
     del_disarm();
@@ -513,13 +559,13 @@ static void minimap_delete_plugin(void)
     BM_refresh_graph(landing);
 }
 
-static void minimap_add_plugin(void)
+static void plugin_map_add_plugin(void)
 {
-    const minimap_node_t *node = minimap_selected(&g_minimap);
+    const plugin_map_node_t *node = plugin_map_selected(&g_plugin_map);
 
     del_disarm();
 
-    BM_plugin_manager_open(node ? node->id : MINIMAP_NONE);
+    BM_plugin_manager_open(node ? node->id : BM_NONE);
 
     if (BM_plugin_manager_is_open()) uiState = ADD_PLUGIN;
 
@@ -531,36 +577,36 @@ static void minimap_add_plugin(void)
 /*
  * Moves the selection one box along mod-ui's walk of the board.
  */
-static void minimap_move(uint8_t direction)
+static void plugin_map_move(uint8_t direction)
 {
     int16_t target;
     int8_t index;
 
-    if (!g_minimap_loaded || g_minimap.selected == MINIMAP_NONE) return;
+    if (!g_plugin_map_loaded || g_plugin_map.selected == BM_NONE) return;
 
-    target = minimap_step(&g_minimap, g_minimap.selected, direction);
+    target = plugin_map_step(&g_plugin_map, g_plugin_map.selected, direction);
 
     // the two ends of the board; the walk does not wrap
-    if (target == MINIMAP_NONE) return;
+    if (target == BM_NONE) return;
 
-    index = minimap_index_of(&g_minimap, target);
+    index = plugin_map_index_of(&g_plugin_map, target);
 
-    if (index == MINIMAP_NONE)
+    if (index == BM_NONE)
     {
         /*
          * The next box is outside the window mod-ui sent, which is how a board too big
          * for one message is crossed: ask for the window centred on it and carry on. The
          * walk order is built over the whole board, so this always names a real box.
          */
-        request_minimap(target, 0);
+        request_plugin_map(target, 0);
 
-        if (!g_minimap_loaded) return;
+        if (!g_plugin_map_loaded) return;
 
-        index = minimap_index_of(&g_minimap, target);
-        if (index == MINIMAP_NONE) return;
+        index = plugin_map_index_of(&g_plugin_map, target);
+        if (index == BM_NONE) return;
     }
 
-    minimap_select(&g_minimap, index);
+    plugin_map_select(&g_plugin_map, index);
     BM_print_screen();
 }
 
@@ -596,7 +642,7 @@ static void request_plugin_controls(const char* uid, uint8_t start_index, uint8_
     ui_comm_webgui_clear_tx_buffer();
 
     // send command control list
-    i = copy_command((char *)buffer, CMD_DWARF_BUILDER_CONTROLS);
+    i = copy_command((char *)buffer, CMD_BUILDER_CONTROL_LIST);
 
     //buffer[i++] = '"';
     strcpy(&buffer[i], uid);
@@ -675,7 +721,7 @@ static void request_control_page(control_t *control, uint8_t dir)
     uint8_t i;
     uint8_t hw_id = control->hw_id;
 
-    i = copy_command(buffer, CMD_DWARF_BUILDER_CONTROL_PAGE);
+    i = copy_command(buffer, CMD_BUILDER_CONTROL_PAGE);
 
     // insert the hw_id on buffer
     i += int_to_str(hw_id, &buffer[i], sizeof(buffer) - i, 0);
@@ -738,13 +784,13 @@ static void request_control_page(control_t *control, uint8_t dir)
 /*
  * open the plugin edit screen for a node of the graph
  */
-static void select_plugin_node(const minimap_node_t *node)
+static void select_plugin_node(const plugin_map_node_t *node)
 {
     if (!node) return;
 
     /*
      * The wire id of a plugin node is the mapper's instance id, which is exactly what
-     * CMD_DWARF_BUILDER_CONTROLS takes, so the graph view needs no second lookup to go
+     * CMD_BUILDER_CONTROL_LIST takes, so the graph view needs no second lookup to go
      * from the box on screen to the controls behind it.
      */
     int_to_str(node->id, g_selected_uid, sizeof(g_selected_uid), 0);
@@ -767,7 +813,7 @@ static void send_control_set(control_t *control)
     char buffer[128];
     uint8_t i;
 
-    i = copy_command(buffer, CMD_DWARF_BUILDER_CONTROL_SET);
+    i = copy_command(buffer, CMD_BUILDER_CONTROL_SET);
 
     // insert the hw_id on buffer
     i += int_to_str(control->hw_id, &buffer[i], sizeof(buffer) - i, 0);
@@ -1177,8 +1223,8 @@ void BM_init(void)
     BM_conn_manager_init();
     BM_bindings_manager_init();
     BM_plugin_manager_init();
-    minimap_init(&g_minimap);
-    minimap_set_view(&g_minimap, MINIMAP_VIEW_X, MINIMAP_VIEW_Y, MINIMAP_VIEW_W, MINIMAP_VIEW_H);
+    plugin_map_init(&g_plugin_map);
+    plugin_map_set_view(&g_plugin_map, PLUGIN_MAP_VIEW_X, PLUGIN_MAP_VIEW_Y, PLUGIN_MAP_VIEW_W, PLUGIN_MAP_VIEW_H);
 }
 
 void BM_clear(void)
@@ -1205,13 +1251,63 @@ void BM_foot_change(uint8_t foot)
      * the panel while they are up.
      */
     if (uiState == PLUGIN_SELECT)
-        minimap_set_view_mode(&g_minimap, list ? MINIMAP_VIEW_LIST : MINIMAP_VIEW_GRAPH);
+        plugin_map_set_view_mode(&g_plugin_map, list ? PLUGIN_MAP_VIEW_LIST : PLUGIN_MAP_VIEW_GRAPH);
     else if (uiState == CONNECTIONS && BM_conn_manager_is_picking())
         BM_conn_manager_view(list);
     else
         return;
 
     BM_print_screen();
+}
+
+/*
+ * The host watches the board only while we are looking at it: one command on the way in,
+ * one on the way out, and no timer running on the server the rest of the time.
+ */
+static void request_change_notify(uint8_t on)
+{
+    uint8_t i;
+    char buffer[24];
+    memset(buffer, 0, sizeof buffer);
+
+    ui_comm_webgui_set_response_cb(NULL, NULL);
+    ui_comm_webgui_clear_tx_buffer();
+
+    i = copy_command((char *)buffer, CMD_BUILDER_PLUGIN_NOTIFY);
+    i += int_to_str(on, &buffer[i], sizeof(buffer) - i, 0);
+    buffer[i++] = 0;
+
+    ui_comm_webgui_send(buffer, i);
+    ui_comm_webgui_wait_response();
+}
+
+/*
+ * Set from the protocol callback when the host says the board has changed. Acted on in
+ * BM_tick() rather than there: fetching the graph is a command, and a callback of a
+ * received one cannot send commands.
+ */
+static volatile uint8_t g_plugin_map_stale;
+
+void BM_plugin_map_stale(void)
+{
+    g_plugin_map_stale = 1;
+}
+
+/*
+ * Whether the host is watching the board for us.
+ *
+ * Kept because BM_exit() must not send anything on the two paths that leave the builder
+ * from inside a protocol callback -- a pedalboard load, and the host coming back up.
+ * protocol_parse() writes the reply only after the callback returns, so a command sent
+ * from one and waited on is a deadlock. On those two paths the watch is dropped without a
+ * word: the host has either stopped it itself, or never knew about it.
+ */
+static uint8_t g_watching;
+
+void BM_forget_watch(void)
+{
+    g_watching = 0;
+    g_plugin_map_stale = 0;
 }
 
 /*
@@ -1222,7 +1318,12 @@ void BM_enter(void)
     uiState = PLUGIN_SELECT;
     // an arm does not survive leaving the mode: coming back is not a confirmation either
     del_disarm();
-    request_minimap(MINIMAP_NONE, 1);
+    g_plugin_map_stale = 0;
+    request_plugin_map(BM_NONE, 1);
+
+    // ... and only now, so the host takes note of the board we have just fetched
+    request_change_notify(1);
+    g_watching = 1;
 
     /*
      * The first screen looks at the middle of the board, not at the selection. mod-ui
@@ -1231,14 +1332,28 @@ void BM_enter(void)
      * in the centre of the panel and push IN2 below. No guard needed on the pair falling
      * outside: it is centred too, and shorter than the viewport.
      */
-    if (g_minimap_loaded)
+    if (g_plugin_map_loaded)
     {
-        g_minimap.offset_x = 0;
-        g_minimap.offset_y = (g_minimap.scene_height - g_minimap.view.height) / 2;
-        minimap_scroll(&g_minimap, 0, 0);
+        g_plugin_map.offset_x = 0;
+        g_plugin_map.offset_y = (g_plugin_map.scene_height - g_plugin_map.view.height) / 2;
+        plugin_map_scroll(&g_plugin_map, 0, 0);
     }
 
     BM_set_state();
+}
+
+/*
+ * Called on builder mode exit, from wherever the panel leaves it. Tells the host to stop
+ * watching the board: nothing should be running on the server for a screen nobody is on.
+ */
+void BM_exit(void)
+{
+    g_plugin_map_stale = 0;
+
+    if (!g_watching) return;
+
+    g_watching = 0;
+    request_change_notify(0);
 }
 
 
@@ -1247,7 +1362,7 @@ void BM_enter(void)
  */
 void BM_refresh_graph(int16_t focus)
 {
-    request_minimap(focus, 0);
+    request_plugin_map(focus, 0);
 }
 
 
@@ -1277,16 +1392,21 @@ void BM_encoder_click(uint8_t encoder)
     if (uiState == PLUGIN_SELECT) {
         del_disarm();
 
-        // opening a plugin is the encoder click; there is no button for it
-        if (encoder == 0 || encoder == 1) {
-            const minimap_node_t *node = minimap_selected(&g_minimap);
+        // opening a plugin is the first encoder's click; there is no button for it
+        if (encoder == 0) {
+            const plugin_map_node_t *node = plugin_map_selected(&g_plugin_map);
 
             // the hardware in/out boxes are part of the picture but have nothing to edit
-            if (node && node->kind == MINIMAP_PLUGIN) {
+            if (node && node->kind == BM_PLUGIN) {
                 uiState = PLUGIN_EDIT;
                 select_plugin_node(node);
                 BM_print_screen();
             }
+        }
+        // and the second's turns the box off, or back on
+        else if (encoder == 1) {
+            plugin_map_toggle_bypass();
+            BM_print_screen();
         }
     } else {
         BM_toggle_control(encoder);
@@ -1324,7 +1444,7 @@ void BM_up(uint8_t encoder)
         del_disarm();
 
         if (encoder == 0)
-            minimap_move(MINIMAP_PREV);
+            plugin_map_move(PLUGIN_MAP_PREV);
         /*
          * The second encoder opens the popup one way and closes it the other: turning it
          * right opens, turning it left off the first row closes. Turning left here, with
@@ -1364,16 +1484,16 @@ void BM_down(uint8_t encoder)
         del_disarm();
 
         if (encoder == 0)
-            minimap_move(MINIMAP_NEXT);
+            plugin_map_move(PLUGIN_MAP_NEXT);
         else if (encoder == 1) {
             // rightwards only; leftwards is what closes it
-            BM_conn_manager_open(&g_minimap);
+            BM_conn_manager_open(&g_plugin_map);
             if (BM_conn_manager_is_open()) uiState = CONNECTIONS;
             BM_print_screen();
         }
         else if (encoder == 2) {
             // the bindings screen has three columns of its own, so BACK is what leaves it
-            BM_bindings_manager_open(&g_minimap);
+            BM_bindings_manager_open(&g_plugin_map);
             if (BM_bindings_manager_is_open()) uiState = BINDINGS;
             BM_print_screen();
         }
@@ -1457,7 +1577,7 @@ void BM_button_pressed(uint8_t button)
                     uiState = PLUGIN_SELECT;
 
                     // land on what was just added, so it is there to wire up
-                    if (added != MINIMAP_NONE) request_minimap(added, 0);
+                    if (added != BM_NONE) request_plugin_map(added, 0);
                 }
 
                 BM_print_screen();
@@ -1481,14 +1601,14 @@ void BM_button_pressed(uint8_t button)
             }
             else
             {
-                minimap_add_plugin();
+                plugin_map_add_plugin();
             }
         break;
         
         case 2:
             if (uiState == PLUGIN_SELECT)
             {
-                minimap_delete_plugin();
+                plugin_map_delete_plugin();
                 BM_print_screen();
             }
             else if (uiState == ADD_PLUGIN)
@@ -1578,6 +1698,24 @@ void BM_tick(void)
 {
     if (naveg_get_current_mode() != MODE_BUILDER) return;
 
+    /*
+     * The board changed under us. Done here rather than where the news arrived, and only
+     * over the graph itself: the popups own the panel while they are up, and refetching
+     * underneath one would move the ground they are standing on.
+     */
+    if (g_plugin_map_stale && uiState == PLUGIN_SELECT)
+    {
+        const plugin_map_node_t *node = plugin_map_selected(&g_plugin_map);
+
+        g_plugin_map_stale = 0;
+
+        // keep looking at the same box where it is still there; the request falls back to
+        // the host's own choice of focus when it is not
+        BM_refresh_graph(node ? node->id : BM_NONE);
+        BM_print_screen();
+        return;
+    }
+
     if (uiState == CONNECTIONS)
     {
         if (BM_conn_manager_tick())
@@ -1600,7 +1738,7 @@ void BM_tick(void)
 
         g_del_stamp = hardware_timestamp();
         g_del_off = !g_del_off;
-        minimap_set_blink(&g_minimap, g_del_off);
+        plugin_map_set_blink(&g_plugin_map, g_del_off);
         BM_print_screen();
     }
 }
@@ -1613,7 +1751,7 @@ void BM_print_screen(void)
     switch (uiState)
     {
         case PLUGIN_SELECT:
-            screen_minimap(&g_minimap, g_minimap_loaded, g_del_armed, !g_del_off);
+            screen_plugin_map(&g_plugin_map, g_plugin_map_loaded, g_del_armed, !g_del_off);
         break;
         case BINDINGS:
         {
@@ -1648,7 +1786,7 @@ void BM_print_screen(void)
             // while a destination is being chosen the picture is the menu
             if (BM_conn_manager_is_picking())
             {
-                screen_connection_pick(&g_minimap, BM_conn_manager_pick_title());
+                screen_connection_pick(&g_plugin_map, BM_conn_manager_pick_title());
                 break;
             }
 

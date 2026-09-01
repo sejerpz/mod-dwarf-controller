@@ -29,7 +29,7 @@
 
 #include <stdint.h>
 
-#include "minimap.h"
+#include "plugin_map.h"
 #include "screen.h"
 
 
@@ -45,7 +45,7 @@ void BM_bindings_manager_init(void);
 // Opens on the box currently selected in `map`. Does nothing when the selection is not a
 // plugin -- the capture and playback boxes have nothing to bind -- so check
 // BM_bindings_manager_is_open() afterwards.
-void BM_bindings_manager_open(minimap_t *map);
+void BM_bindings_manager_open(plugin_map_t *map);
 uint8_t BM_bindings_manager_is_open(void);
 void BM_bindings_manager_close(void);
 

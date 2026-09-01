@@ -20,7 +20,7 @@
 #include "data.h"
 #include "node.h"
 #include "glcd_widget.h"
-#include "minimap.h"
+#include "plugin_map.h"
 #include "mode_popup.h"
 
 /*
@@ -199,10 +199,10 @@ void screen_plugins_list(menu_item_t *item);
 // `armed` puts DEL on the third button, and `blink_reverse` is which half of its flash
 // this is: the button and the box it would remove flash together, as one thing about to
 // happen.
-void screen_minimap(minimap_t *map, uint8_t loaded, uint8_t armed, uint8_t blink_reverse);
+void screen_plugin_map(plugin_map_t *map, uint8_t loaded, uint8_t armed, uint8_t blink_reverse);
 void screen_connections(connections_t *model);
-// the minimap used as a chooser: same picture, a title saying what for
-void screen_connection_pick(minimap_t *map, const char *title);
+// the plugin_map used as a chooser: same picture, a title saying what for
+void screen_connection_pick(plugin_map_t *map, const char *title);
 void screen_plugin_manager(plugin_manager_t *model);
 void screen_plugin_info(plugin_info_t *model);
 void screen_bindings(bindings_t *model);
