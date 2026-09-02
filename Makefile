@@ -8,7 +8,6 @@ TOOLCHAIN_PREFIX = arm-none-eabi-
 GIT_HASH := $(shell git rev-parse --short=8 HEAD)
 
 # Config
-# ENABLE_DEBUG_TRACE = 1
 # Enable SEMIHOST debug: librdimon
 # ENABLE_SEMIHOST
 
@@ -92,9 +91,6 @@ CFLAGS += -D$(CPU_SERIE)
 CFLAGS += -DVERSION_HASH=\"v.$(GIT_HASH)\"
 ifneq ($(ENABLE_SEMIHOST),)
 CFLAGS += -DENABLE_SEMIHOST
-endif
-ifneq ($(ENABLE_DEBUG_TRACE),)
-CFLAGS += -DENABLE_DEBUG_TRACE
 endif
 CFLAGS += -O2
 CFLAGS += -g
@@ -213,6 +209,11 @@ freertos/src/%.o: freertos/src/%.c
 %.o: %.c
 	@echo -e ${GREEN}Building $<${NOCOLOR}
 	@$(CC) $(THUMB) $(CFLAGS) -c $< -o $@
+
+# CFLAGS already writes a .d per object with -MMD, but nothing was reading them back,
+# so editing a header rebuilt nothing. Two objects could end up compiled against
+# different versions of the same struct, which the linker cannot notice.
+-include $(wildcard $(OUT_DIR)/dep/*.d)
 
 clean:
 	@echo -e ${GREEN}Object files cleaned out $<${NOCOLOR}

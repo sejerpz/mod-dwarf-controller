@@ -153,6 +153,21 @@ void ui_comm_webgui_wait_response(void)
     while (g_webgui_blocked);
 }
 
+/*
+ * The same wait taken apart, for a caller that wants to do something while it lasts --
+ * put a notice on screen when the host is taking its time, say. Call begin exactly where
+ * ui_comm_webgui_wait_response() would have been called, then poll pending.
+ */
+void ui_comm_webgui_wait_begin(void)
+{
+    g_webgui_blocked = 1;
+}
+
+uint8_t ui_comm_webgui_wait_pending(void)
+{
+    return g_webgui_blocked;
+}
+
 //clear the ringbuffer
 void ui_comm_webgui_clear(void)
 {

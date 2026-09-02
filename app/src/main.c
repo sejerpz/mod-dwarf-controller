@@ -28,10 +28,10 @@
 #include "images.h"
 #include "uc1701.h"
 #include "mode_navigation.h"
+#include "mode_builder.h"
 #include "mode_tools.h"
 #include "LPC177x_8x.h"
 #include "memory_map.h"
-#include "logging.h"
 
 #ifndef VERSION_HASH
 #define VERSION_HASH 'custom'
@@ -266,6 +266,9 @@ static void displays_task(void *pvParameters)
         // update GLCD
         glcd_update(hardware_glcds(0));
 
+        //a cable armed for deletion blinks; the builder needs a tick to do it
+        BM_tick();
+
         //check if nav mode needs update
         if (NM_get_need_update()){
             NM_update_lists(NM_get_current_list());
@@ -411,28 +414,6 @@ static void cli_task(void *pvParameters)
     }
 }
 
-void log_memory_config() {
-    unsigned long total_heap_size = 0;
-    size_t ssize = (size_t)&__stack_size;
-
-    log_info("SRAM: %p, SRAM0: %p", __top_SRAM, __top_SRAM0);
-    log_info("Heap: %p-%p (%d bytes)", _pvHeapStart, _pvHeapEnd, _pvHeapEnd - _pvHeapStart);
-    log_info("Sys stack: %p-%p (%d bytes)", __top_SRAM, __top_SRAM - ssize, ssize);
-
-    for (int i = 0; xHeapRegions[i].pucStartAddress != NULL; i++) {
-        uint8_t *start = xHeapRegions[i].pucStartAddress;
-        size_t size = xHeapRegions[i].xSizeInBytes;
-        uint8_t *end = start + size;
-
-
-        total_heap_size += size;
-        log_info("Reg. %d: %p-%p (%luKB)", i, start, end, (unsigned long)(size/1024));
-
-    }
-
-    log_info("Total: %luKB", total_heap_size/1024);
-    log_info("Free: %luKB", (unsigned long)xPortGetFreeHeapSize()/1024);
-}
 
 static void post_boot_task(void *pvParameters)
 {
@@ -449,7 +430,6 @@ static void post_boot_task(void *pvParameters)
             //we are now ready to start recieving user interactions
             hardware_enable_device_IRQS();
 
-            //log_memory_config();
 
             // deletes itself
             vTaskDelete(NULL);

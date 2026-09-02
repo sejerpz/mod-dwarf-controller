@@ -17,7 +17,6 @@
 #include "mode_navigation.h"
 #include <string.h>
 #include <stdio.h>
-#include "logging.h"
 
 /*
 ************************************************************************************************************************
@@ -1900,6 +1899,828 @@ void screen_plugins_list(menu_item_t *item)
 
     led = hardware_leds(6);
     set_ledz_trigger_by_color_id(led, LED_OFF, led_state);
+}
+
+/*
+ * BUILDER: draw the pedalboard graph
+ *
+ * The chrome is the same as the plugin list it replaces -- title bar, outlines, three
+ * button labels -- and the graph is drawn into the gap between them. plugin_map_draw()
+ * clips to the viewport mode_builder.c set, so nothing here can spill over the footer.
+ */
+void screen_plugin_map(plugin_map_t *map, uint8_t loaded, uint8_t armed, uint8_t blink_reverse)
+{
+    glcd_t *display;
+    display = hardware_glcds(0);
+
+    const plugin_map_node_t *node = loaded ? plugin_map_selected(map) : NULL;
+
+    // clear screen
+    glcd_clear(display, GLCD_WHITE);
+
+    // draws the title: the box label is cut to the width of the box, so the selected
+    // node repeats itself here with the longer label mod-ui sends for this bar
+    textbox_t title_box = {};
+    title_box.color = GLCD_BLACK;
+    title_box.mode = TEXT_SINGLE_LINE;
+    title_box.font = Terminal3x5;
+    title_box.top_margin = 1;
+    title_box.align = ALIGN_CENTER_TOP;
+    title_box.text = (node && node->title[0]) ? node->title : "PEDALBOARD";
+    widget_textbox(display, &title_box);
+
+    //invert the title area
+    glcd_rect_invert(display, 0, 0, DISPLAY_WIDTH, 7);
+
+    print_menu_outlines();
+
+    // The three buttons. Opening a plugin is the encoder click now, not a button: the
+    // encoder is already under the thumb that moved the selection there.
+    glcd_text(display, 22, DISPLAY_HEIGHT - 7, "EXIT", Terminal3x5, GLCD_BLACK);
+    glcd_text(display, 58, DISPLAY_HEIGHT - 7, "ADD", Terminal3x5, GLCD_BLACK);
+
+    /*
+     * DEL, on anything that is actually removable: the capture and playback boxes are part
+     * of the picture and not part of the pedalboard. Once armed it flashes in step with the
+     * box it would remove, the whole button the way print_menu_boxes() draws it, so the two
+     * read as one thing about to happen.
+     */
+    if (node && node->kind == BM_PLUGIN)
+    {
+        glcd_text(display, 92, DISPLAY_HEIGHT - 7, "DEL", Terminal3x5, GLCD_BLACK);
+
+        if (armed && blink_reverse)
+            glcd_rect_invert(display, 82, DISPLAY_HEIGHT - 9, 31, 9);
+    }
+
+    if (loaded && map->n_nodes > 0)
+    {
+        plugin_map_draw(display, map);
+    }
+    else
+    {
+        glcd_text(display, DISPLAY_WIDTH / 2 - 32, DISPLAY_HEIGHT / 2 -5, "NO PLUGINS", Terminal7x8, GLCD_BLACK);
+    }
+
+    // led handling
+    //turn off foot leds
+    for (uint8_t i = 0; i < FOOTSWITCHES_COUNT; i++)
+        ledz_off(hardware_leds(i), WHITE);
+
+    led_state_t led_state;
+    led_state.color = BUILDER_COLOR;
+
+    /*
+     * B and C are the two ways of reading the board, and each names one rather than
+     * toggling: the lit switch is the view that is on screen, so it reads without being
+     * pressed. The third foot is not ours and stays dark.
+     */
+    set_ledz_trigger_by_color_id(hardware_leds(0),
+                                 map->view_mode == PLUGIN_MAP_VIEW_LIST ? LED_OFF : LED_ON,
+                                 led_state);
+    set_ledz_trigger_by_color_id(hardware_leds(1),
+                                 map->view_mode == PLUGIN_MAP_VIEW_LIST ? LED_ON : LED_OFF,
+                                 led_state);
+
+    ledz_t* led = hardware_leds(3);
+    set_ledz_trigger_by_color_id(led, LED_ON, led_state);
+
+    led = hardware_leds(4);
+    set_ledz_trigger_by_color_id(led, LED_OFF, led_state);
+
+    led = hardware_leds(5);
+    set_ledz_trigger_by_color_id(led, LED_ON, led_state);
+
+    led = hardware_leds(6);
+    set_ledz_trigger_by_color_id(led, LED_OFF, led_state);
+}
+
+/*
+ * BUILDER: draw the connection menu of one box
+ *
+ * Same chrome as the graph view it opens from. The rows come ready to draw: the caller
+ * blanks the armed one on the off half of its blink, so the list never reflows under it.
+ */
+/*
+ * The strip under the connection list: one line, in reverse, above the button row. Inset
+ * by a pixel either side because print_menu_outlines() runs the frame down x=0 and x=127
+ * through this very band, and inverting those two columns would break the frame in half.
+ */
+#define SCREEN_PAIR_X       1
+#define SCREEN_PAIR_Y       46
+#define SCREEN_PAIR_W       (DISPLAY_WIDTH - 2 * SCREEN_PAIR_X)
+#define SCREEN_PAIR_H       7
+/*
+ * Never a multiple of 8. glcd_text() writes a whole page at a time and only merges with
+ * what is already there when the row is off a page boundary -- write_data() in the driver
+ * takes the plain WRITE_BUFFER branch when y % 8 is zero. Text at row 48 would therefore
+ * blank rows 48..55 under every column it touches, spaces between characters included,
+ * and row 55 is the top edge of the buttons.
+ */
+#define SCREEN_PAIR_TEXT_Y  (SCREEN_PAIR_Y + 1)
+// half the width, less the " + " between the two names and the arrows at either edge
+#define SCREEN_PAIR_ROOM    13
+
+static uint8_t copy_upto(char *dst, uint8_t at, const char *text, uint8_t room)
+{
+    uint8_t length = (uint8_t) strlen(text);
+
+    if (length > room) length = room;
+    memcpy(&dst[at], text, length);
+
+    return (uint8_t)(at + length);
+}
+
+void screen_connections(connections_t *model)
+{
+    glcd_t *display;
+    display = hardware_glcds(0);
+
+    glcd_clear(display, GLCD_WHITE);
+
+    textbox_t title_box = {};
+    title_box.color = GLCD_BLACK;
+    title_box.mode = TEXT_SINGLE_LINE;
+    title_box.font = Terminal3x5;
+    title_box.top_margin = 1;
+    title_box.align = ALIGN_CENTER_TOP;
+    title_box.text = model->title ? model->title : "CONNECTIONS";
+    widget_textbox(display, &title_box);
+
+    glcd_rect_invert(display, 0, 0, DISPLAY_WIDTH, 7);
+
+    print_menu_outlines();
+
+    glcd_text(display, 22, DISPLAY_HEIGHT - 7, "BACK", Terminal3x5, GLCD_BLACK);
+
+    // the filter cycles on the third button, so its label is what it currently shows
+    if (model->filter)
+        glcd_text(display, 97 - (glcd_text_width(Terminal3x5, model->filter) / 2),
+                  DISPLAY_HEIGHT - 7, model->filter, Terminal3x5, GLCD_BLACK);
+
+    /*
+     * One button for both, told apart by whether a cable is armed: ADD while the list is
+     * idle, DEL once one is picked. DEL blinks in step with the row it would delete, so
+     * the two read as one thing about to happen -- the whole button, the same rectangle
+     * print_menu_boxes() draws for it, so it reads as the button flashing rather than the
+     * word inside it.
+     */
+    if (model->can_delete)
+    {
+        glcd_text(display, 58, DISPLAY_HEIGHT - 7, "DEL", Terminal3x5, GLCD_BLACK);
+
+        if (model->blink_reverse)
+            glcd_rect_invert(display, 48, DISPLAY_HEIGHT - 9, 31, 9);
+    }
+    else if (model->can_add)
+    {
+        glcd_text(display, 58, DISPLAY_HEIGHT - 7, "ADD", Terminal3x5, GLCD_BLACK);
+    }
+    else if (model->can_select)
+    {
+        glcd_text(display, 52, DISPLAY_HEIGHT - 7, "SELECT", Terminal3x5, GLCD_BLACK);
+    }
+
+    /*
+     * A box with nothing wired to it, which is where every pedalboard starts. Saying so in
+     * the middle of the empty frame is what points at the ADD button under it.
+     */
+    if (model->count == 0 && model->can_add)
+    {
+        const char *empty = "NO CONNECTIONS";
+
+        glcd_text(display, (DISPLAY_WIDTH - glcd_text_width(Terminal3x5, empty)) / 2,
+                  25, empty, Terminal3x5, GLCD_BLACK);
+    }
+
+    if (model->count > 0)
+    {
+        listbox_t list;
+        list.x = 6;
+        // up against the title bar, to pay for the strip that took the bottom of the box
+        list.y = 9;
+        list.width = 116;
+        list.height = 36;
+        list.color = GLCD_BLACK;
+        list.font = Terminal3x5;
+        list.line_space = 2;
+        list.line_top_margin = 1;
+        list.line_bottom_margin = 1;
+        list.text_left_margin = 2;
+
+        list.hover = model->hover;
+        list.selected = model->hover;
+        list.count = model->count;
+        list.list = model->rows;
+        widget_menu_listbox(display, &list);
+
+        /*
+         * widget_menu_listbox() always draws the hovered row in reverse, which is the
+         * half of the blink we want; inverting it a second time on the other half puts
+         * it back to normal. The row's rectangle is worked out here the same way the
+         * widget works it out -- the two have to agree, and there is no way to ask it
+         * where it drew.
+         */
+        if (model->can_delete && !model->blink_reverse)
+        {
+            uint8_t font_height = Terminal3x5[FONT_HEIGHT];
+            uint8_t line_pitch = font_height + list.line_space;
+            uint8_t max_lines = list.height / line_pitch;
+            uint8_t center_focus = (max_lines / 2) - (1 - (max_lines % 2));
+            int16_t first_line = 0;
+            int16_t focus;
+
+            if (list.hover > center_focus && list.count > max_lines)
+            {
+                first_line = list.hover - center_focus;
+                if (first_line > (list.count - max_lines))
+                    first_line = list.count - max_lines;
+            }
+
+            focus = list.hover - first_line;
+            glcd_rect_invert(display, list.x,
+                             list.y + list.line_space + focus * line_pitch
+                                 - list.line_top_margin,
+                             list.width,
+                             font_height + list.line_top_margin + list.line_bottom_margin);
+        }
+    }
+
+    /*
+     * The cable the hovered row stands for, named end to end and drawn in reverse so it
+     * reads as a caption rather than one more row of the list. A row is one line per box
+     * at the far end however many cables run there, so the third encoder walks them and
+     * the arrows at the edges are what says so.
+     */
+    if (model->pair_source && model->pair_sink)
+    {
+        char line[2 * SCREEN_PAIR_ROOM + 4];
+        uint8_t at = 0;
+
+        at = copy_upto(line, at, model->pair_source, SCREEN_PAIR_ROOM);
+        line[at++] = ' ';
+        line[at++] = '+';
+        line[at++] = ' ';
+        at = copy_upto(line, at, model->pair_sink, SCREEN_PAIR_ROOM);
+        line[at] = 0;
+
+        glcd_text(display, (DISPLAY_WIDTH - glcd_text_width(Terminal3x5, line)) / 2,
+                  SCREEN_PAIR_TEXT_Y, line, Terminal3x5, GLCD_BLACK);
+
+        if (model->pair_count > 1)
+        {
+            glcd_text(display, SCREEN_PAIR_X + 2, SCREEN_PAIR_TEXT_Y, "<", Terminal3x5,
+                      GLCD_BLACK);
+            glcd_text(display, SCREEN_PAIR_X + SCREEN_PAIR_W - 5, SCREEN_PAIR_TEXT_Y, ">",
+                      Terminal3x5, GLCD_BLACK);
+        }
+
+        glcd_rect_invert(display, SCREEN_PAIR_X, SCREEN_PAIR_Y, SCREEN_PAIR_W,
+                         SCREEN_PAIR_H);
+    }
+
+    // led handling, same as the graph view
+    for (uint8_t i = 0; i < FOOTSWITCHES_COUNT; i++)
+        ledz_off(hardware_leds(i), WHITE);
+
+    led_state_t led_state;
+    led_state.color = BUILDER_COLOR;
+
+    ledz_t* led = hardware_leds(3);
+    set_ledz_trigger_by_color_id(led, LED_ON, led_state);
+
+    led = hardware_leds(4);
+    set_ledz_trigger_by_color_id(led, LED_OFF, led_state);
+
+    led = hardware_leds(5);
+    set_ledz_trigger_by_color_id(led, LED_ON, led_state);
+
+    led = hardware_leds(6);
+    set_ledz_trigger_by_color_id(led, LED_OFF, led_state);
+}
+
+/*
+ * One column of the Add screen.
+ *
+ * Drawn here rather than with widget_menu_listbox, which lays its rows out with
+ * ALIGN_CENTER_NONE -- centred on the whole display, not on the box it was given. With one
+ * list that looks right and nobody notices; with two the texts land on top of each other
+ * in the middle of the panel.
+ */
+static void draw_offset_column(glcd_t *display, uint8_t x, uint8_t width, uint8_t top,
+                               char **rows, uint8_t count, int16_t hover,
+                               const uint8_t *marks, uint8_t armed, uint8_t blink_off);
+
+static void draw_column(glcd_t *display, uint8_t x, uint8_t width,
+                        char **rows, uint8_t count, int16_t hover)
+{
+    draw_offset_column(display, x, width, 12, rows, count, hover, NULL, 0, 0);
+}
+
+/*
+ * `marks` puts a dot against the rows that are spoken for, which is the one thing about an
+ * actuator a user cannot work out by looking at the panel. `armed` and `blink_off` flash
+ * the hovered row: the widget always draws it in reverse, so inverting it a second time on
+ * the other half of the blink puts it back to normal.
+ */
+static void draw_offset_column(glcd_t *display, uint8_t x, uint8_t width, uint8_t top,
+                               char **rows, uint8_t count, int16_t hover,
+                               const uint8_t *marks, uint8_t armed, uint8_t blink_off)
+{
+    const uint8_t height = (uint8_t)(52 - top);
+    uint8_t font_height = Terminal3x5[FONT_HEIGHT];
+    uint8_t pitch = font_height + 2;
+    uint8_t visible = height / pitch;
+    int16_t first = 0;
+    uint8_t i;
+
+    if (count == 0) return;
+    if (visible > count) visible = count;
+
+    // scroll only as far as it takes to keep the hovered row on screen
+    if (hover >= visible) first = hover - visible + 1;
+    if (first > (int16_t)(count - visible)) first = count - visible;
+    if (first < 0) first = 0;
+
+    for (i = 0; i < visible; i++)
+    {
+        uint8_t y = top + i * pitch;
+
+        glcd_text(display, x + 2, y, rows[first + i], Terminal3x5, GLCD_BLACK);
+
+        if (marks && marks[first + i])
+            glcd_text(display, (uint8_t)(x + width - 4), y, "*", Terminal3x5, GLCD_BLACK);
+
+        if ((int16_t)(first + i) == hover)
+        {
+            if (!(armed && blink_off))
+                glcd_rect_invert(display, x, y - 1, width, pitch);
+        }
+    }
+}
+
+/*
+ * BUILDER: the plugin_map doing duty as a chooser
+ *
+ * The same widget as the graph view, in whichever of its two modes, with the cursor
+ * restricted to the boxes that could take the cable. Picking a destination by pointing at
+ * it on the picture beats picking it off a list of names that says nothing about where it
+ * sits -- and the list mode is there for when the name is what you know.
+ */
+void screen_connection_pick(plugin_map_t *map, const char *title)
+{
+    glcd_t *display;
+    display = hardware_glcds(0);
+
+    glcd_clear(display, GLCD_WHITE);
+
+    textbox_t title_box = {};
+    title_box.color = GLCD_BLACK;
+    title_box.mode = TEXT_SINGLE_LINE;
+    title_box.font = Terminal3x5;
+    title_box.top_margin = 1;
+    title_box.align = ALIGN_CENTER_TOP;
+    title_box.text = title ? title : "PICK A BOX";
+    widget_textbox(display, &title_box);
+
+    glcd_rect_invert(display, 0, 0, DISPLAY_WIDTH, 7);
+
+    print_menu_outlines();
+
+    glcd_text(display, 22, DISPLAY_HEIGHT - 7, "BACK", Terminal3x5, GLCD_BLACK);
+
+    // the same gesture as every other step of building a connection
+    glcd_text(display, 52, DISPLAY_HEIGHT - 7, "SELECT", Terminal3x5, GLCD_BLACK);
+
+    plugin_map_draw(display, map);
+
+    for (uint8_t i = 0; i < FOOTSWITCHES_COUNT; i++)
+        ledz_off(hardware_leds(i), WHITE);
+
+    led_state_t led_state;
+    led_state.color = BUILDER_COLOR;
+
+    // B and C read the board the two ways here too, and the lit one says which is on screen
+    set_ledz_trigger_by_color_id(hardware_leds(0),
+                                 map->view_mode == PLUGIN_MAP_VIEW_LIST ? LED_OFF : LED_ON,
+                                 led_state);
+    set_ledz_trigger_by_color_id(hardware_leds(1),
+                                 map->view_mode == PLUGIN_MAP_VIEW_LIST ? LED_ON : LED_OFF,
+                                 led_state);
+
+    ledz_t* led = hardware_leds(3);
+    set_ledz_trigger_by_color_id(led, LED_ON, led_state);
+
+    led = hardware_leds(4);
+    set_ledz_trigger_by_color_id(led, LED_OFF, led_state);
+
+    led = hardware_leds(5);
+    set_ledz_trigger_by_color_id(led, LED_ON, led_state);
+
+    led = hardware_leds(6);
+    set_ledz_trigger_by_color_id(led, LED_OFF, led_state);
+}
+
+/*
+ * BUILDER: draw the Add screen, two columns side by side
+ *
+ * Categories on the left and their contents on the right, each on its own encoder, so both
+ * show a highlighted row at once -- there is no single focus to move between them. The
+ * labels arrive already cut to a column's width: nothing here clips, and a long name would
+ * otherwise be drawn straight across the other column.
+ */
+void screen_plugin_manager(plugin_manager_t *model)
+{
+    glcd_t *display;
+    display = hardware_glcds(0);
+
+    glcd_clear(display, GLCD_WHITE);
+
+    textbox_t title_box = {};
+    title_box.color = GLCD_BLACK;
+    title_box.mode = TEXT_SINGLE_LINE;
+    title_box.font = Terminal3x5;
+    title_box.top_margin = 1;
+    title_box.align = ALIGN_CENTER_TOP;
+    title_box.text = "ADD PLUGIN";
+    widget_textbox(display, &title_box);
+
+    glcd_rect_invert(display, 0, 0, DISPLAY_WIDTH, 7);
+
+    print_menu_outlines();
+
+    glcd_text(display, 22, DISPLAY_HEIGHT - 7, "BACK", Terminal3x5, GLCD_BLACK);
+
+    // the second button instantiates the row under the cursor
+    if (model->plugin_count > 0)
+        glcd_text(display, 58, DISPLAY_HEIGHT - 7, "ADD", Terminal3x5, GLCD_BLACK);
+
+    if (model->filter)
+        glcd_text(display, 97 - (glcd_text_width(Terminal3x5, model->filter) / 2),
+                  DISPLAY_HEIGHT - 7, model->filter, Terminal3x5, GLCD_BLACK);
+
+    // the line between the columns, so the two lists do not read as one
+    glcd_vline(display, 63, 9, 43, GLCD_BLACK);
+
+    draw_column(display, 1, 61, model->categories, model->category_count,
+                model->category_hover);
+
+    if (model->plugin_count > 0)
+        draw_column(display, 65, 61, model->plugins, model->plugin_count,
+                    model->plugin_hover);
+    else
+        glcd_text(display, 74, DISPLAY_HEIGHT / 2 - 3, "EMPTY", Terminal3x5, GLCD_BLACK);
+
+    /*
+     * The letter being scrubbed to, over the middle of both lists. Drawn last and filled
+     * behind, so it reads on top of whatever rows it lands on -- there is nowhere on a
+     * 128x64 panel to put it that is not already busy.
+     */
+    if (model->scrub)
+    {
+        uint8_t width = glcd_text_width(Terminal7x8, model->scrub);
+        uint8_t box_x = (DISPLAY_WIDTH / 2) - 11;
+        uint8_t box_y = (DISPLAY_HEIGHT / 2) - 9;
+
+        glcd_rect_fill(display, box_x, box_y, 22, 18, GLCD_WHITE);
+        glcd_rect(display, box_x, box_y, 22, 18, GLCD_BLACK);
+        glcd_text(display, box_x + (22 - width) / 2, box_y + 5, model->scrub,
+                  Terminal7x8, GLCD_BLACK);
+    }
+
+    // led handling, same as the rest of the builder
+    for (uint8_t i = 0; i < FOOTSWITCHES_COUNT; i++)
+        ledz_off(hardware_leds(i), WHITE);
+
+    led_state_t led_state;
+    led_state.color = BUILDER_COLOR;
+
+    ledz_t* led = hardware_leds(3);
+    set_ledz_trigger_by_color_id(led, LED_ON, led_state);
+
+    led = hardware_leds(4);
+    set_ledz_trigger_by_color_id(led, LED_OFF, led_state);
+
+    led = hardware_leds(5);
+    set_ledz_trigger_by_color_id(led, LED_ON, led_state);
+
+    led = hardware_leds(6);
+    set_ledz_trigger_by_color_id(led, LED_OFF, led_state);
+}
+
+/*
+ * A notice over whatever is on screen, for when the host is taking its time.
+ *
+ * Filled behind, so it reads on top of the lists it covers, and drawn by whoever is doing
+ * the waiting -- there is nobody else awake to do it.
+ */
+/*
+ * The description has the panel to itself, so it is worth wrapping properly. Terminal3x5
+ * is fixed width -- three pixels and a gap between glyphs -- so a line holds width/4
+ * characters and the wrap is a count rather than a measurement. Greedy, breaking on the
+ * last space that fits and falling back to a hard cut for a word longer than the line: a
+ * URI in a description would otherwise stop the wrap dead.
+ */
+#define SCREEN_INFO_PITCH   4
+#define SCREEN_INFO_X       3
+#define SCREEN_INFO_W       116     /* the arrows at the right margin take the rest */
+#define SCREEN_INFO_ARROW   121
+/*
+ * Two lines, inverted, holding everything that is not the description: the name and the
+ * port shape on the first, the brand and the category on the second.
+ */
+#define SCREEN_INFO_HEAD    15
+#define SCREEN_INFO_ROW_1   1
+#define SCREEN_INFO_ROW_2   9
+/*
+ * 17, 24, 31, 38, 45. glcd_text() blanks a whole page when the row is a multiple of eight,
+ * and the only one of these that is, 24, blanks rows 24..31 -- inside the block itself and
+ * under lines not yet drawn. Starting a row lower would put a line on 48, whose page runs
+ * to 55 and would eat the top edge of the buttons.
+ */
+#define SCREEN_INFO_Y       17
+
+static uint8_t wrap_room(void)
+{
+    uint8_t room = SCREEN_INFO_W / SCREEN_INFO_PITCH;
+
+    return room > SCREEN_INFO_ROOM ? SCREEN_INFO_ROOM : room;
+}
+
+/* how much of `text` fits one line, and how many spaces to step over after it */
+static uint8_t wrap_take(const char *text, uint8_t room, uint8_t *skip)
+{
+    uint8_t at = 0, take = 0, gap = 0;
+
+    while (text[at] && at < room)
+    {
+        if (text[at] == ' ') take = at;
+        at++;
+    }
+
+    // the tail fits whole, or the break lands exactly where the line ends
+    if (text[at] == 0 || text[at] == ' ') take = at;
+    else if (take == 0) take = at;          // one word longer than the line
+
+    while (text[take + gap] == ' ') gap++;
+
+    *skip = gap;
+    return take;
+}
+
+uint8_t screen_plugin_info_lines(const char *text)
+{
+    uint8_t room = wrap_room();
+    uint8_t lines = 0;
+
+    if (!text) return 0;
+
+    while (*text && lines < 255)
+    {
+        uint8_t skip;
+        uint8_t take = wrap_take(text, room, &skip);
+
+        lines++;
+        if (take + skip == 0) break;        // nothing consumed: stop rather than spin
+        text += take + skip;
+    }
+
+    return lines;
+}
+
+static void draw_description(glcd_t *display, const char *text, uint8_t first)
+{
+    uint8_t room = wrap_room();
+    uint8_t y = SCREEN_INFO_Y;
+    uint8_t line_no = 0;
+    char line[SCREEN_INFO_ROOM + 1];
+
+    if (!text) return;
+
+    while (*text && line_no < (uint16_t)(first + SCREEN_INFO_LINES))
+    {
+        uint8_t skip;
+        uint8_t take = wrap_take(text, room, &skip);
+
+        if (line_no >= first)
+        {
+            memcpy(line, text, take);
+            line[take] = 0;
+            glcd_text(display, SCREEN_INFO_X, y, line, Terminal3x5, GLCD_BLACK);
+            y += 7;
+        }
+
+        line_no++;
+        if (take + skip == 0) break;
+        text += take + skip;
+    }
+}
+
+/* "A2/2 M1/0", and nothing at all for a kind of port the plugin does not have */
+static void port_shape(char *out, const uint8_t *ports)
+{
+    static const char tags[3] = { 'A', 'M', 'C' };
+    uint8_t at = 0, i;
+
+    for (i = 0; i < 3; i++)
+    {
+        if (ports[i * 2] == 0 && ports[i * 2 + 1] == 0) continue;
+
+        if (at) out[at++] = ' ';
+        out[at++] = tags[i];
+        out[at++] = (char)('0' + (ports[i * 2] % 10));
+        out[at++] = '/';
+        out[at++] = (char)('0' + (ports[i * 2 + 1] % 10));
+    }
+
+    out[at] = 0;
+}
+
+/* one header row: `right` against the right margin, `left` cut so it cannot reach it */
+static void draw_header_row(glcd_t *display, uint8_t y, const char *left, const char *right)
+{
+    char cut[SCREEN_INFO_ROOM + 1];
+    uint8_t width = (right && right[0]) ? glcd_text_width(Terminal3x5, right) : 0;
+    uint8_t room, at = 0;
+
+    if (width)
+        glcd_text(display, (uint8_t)(DISPLAY_WIDTH - 3 - width), y, right, Terminal3x5,
+                  GLCD_BLACK);
+
+    if (!left || !left[0]) return;
+
+    room = (uint8_t)((DISPLAY_WIDTH - 6 - (width ? width + 4 : 0)) / SCREEN_INFO_PITCH);
+    if (room > SCREEN_INFO_ROOM) room = SCREEN_INFO_ROOM;
+
+    while (left[at] && at < room) { cut[at] = left[at]; at++; }
+    cut[at] = 0;
+
+    glcd_text(display, SCREEN_INFO_X, y, cut, Terminal3x5, GLCD_BLACK);
+}
+
+void screen_plugin_info(plugin_info_t *model)
+{
+    glcd_t *display;
+    char shape[16];
+    uint8_t total;
+    display = hardware_glcds(0);
+
+    glcd_clear(display, GLCD_WHITE);
+
+    port_shape(shape, model->ports);
+
+    draw_header_row(display, SCREEN_INFO_ROW_1, model->name, shape);
+    draw_header_row(display, SCREEN_INFO_ROW_2, model->brand, model->category);
+
+    /*
+     * Inverted before the frame is drawn, not after: print_menu_outlines() runs the frame
+     * down x=0 and x=127 from row 7, and inverting over it would break it in half.
+     */
+    glcd_rect_invert(display, 0, 0, DISPLAY_WIDTH, SCREEN_INFO_HEAD);
+
+    print_menu_outlines();
+
+    glcd_text(display, 22, DISPLAY_HEIGHT - 7, "BACK", Terminal3x5, GLCD_BLACK);
+
+    draw_description(display, model->comment, model->first_line);
+
+    // which way there is more of it, since the first encoder is what moves it
+    total = screen_plugin_info_lines(model->comment);
+
+    if (model->first_line > 0)
+        glcd_text(display, SCREEN_INFO_ARROW, SCREEN_INFO_Y, "^", Terminal3x5, GLCD_BLACK);
+
+    if (total > model->first_line + SCREEN_INFO_LINES)
+        glcd_text(display, SCREEN_INFO_ARROW, SCREEN_INFO_Y + 4 * 7, "v", Terminal3x5,
+                  GLCD_BLACK);
+
+    for (uint8_t i = 0; i < FOOTSWITCHES_COUNT; i++)
+        ledz_off(hardware_leds(i), WHITE);
+
+    led_state_t led_state;
+    led_state.color = BUILDER_COLOR;
+
+    ledz_t* led = hardware_leds(3);
+    set_ledz_trigger_by_color_id(led, LED_ON, led_state);
+
+    led = hardware_leds(4);
+    set_ledz_trigger_by_color_id(led, LED_OFF, led_state);
+
+    led = hardware_leds(5);
+    set_ledz_trigger_by_color_id(led, LED_ON, led_state);
+
+    led = hardware_leds(6);
+    set_ledz_trigger_by_color_id(led, LED_OFF, led_state);
+}
+
+void screen_bindings(bindings_t *model)
+{
+    glcd_t *display;
+    display = hardware_glcds(0);
+
+    glcd_clear(display, GLCD_WHITE);
+
+    textbox_t title_box = {};
+    title_box.color = GLCD_BLACK;
+    title_box.mode = TEXT_SINGLE_LINE;
+    title_box.font = Terminal3x5;
+    title_box.top_margin = 1;
+    title_box.align = ALIGN_CENTER_TOP;
+    title_box.text = model->title;
+    widget_textbox(display, &title_box);
+
+    glcd_rect_invert(display, 0, 0, DISPLAY_WIDTH, 7);
+
+    print_menu_outlines();
+
+    glcd_text(display, 22, DISPLAY_HEIGHT - 7, "BACK", Terminal3x5, GLCD_BLACK);
+
+    if (model->param_count > 0 && model->actuator_count > 0)
+        glcd_text(display, 58, DISPLAY_HEIGHT - 7, "ADD", Terminal3x5, GLCD_BLACK);
+
+    /*
+     * DEL only where the slot holds something. Once armed it flashes in step with the row
+     * it would empty, the whole button the way print_menu_boxes() draws it, so the two
+     * read as one thing about to happen.
+     */
+    if (model->can_delete)
+    {
+        glcd_text(display, 92, DISPLAY_HEIGHT - 7, "DEL", Terminal3x5, GLCD_BLACK);
+
+        if (model->armed && model->blink_reverse)
+            glcd_rect_invert(display, 82, DISPLAY_HEIGHT - 9, 31, 9);
+    }
+
+    /*
+     * Two columns, one encoder each: what to bind on the left, what to bind it to on the
+     * right. The page is the third encoder and one number, so it is a heading over the
+     * column it applies to rather than a column of its own.
+     */
+    draw_column(display, 2, 60, model->params, model->param_count, model->param_hover);
+
+    glcd_vline(display, 63, 9, 43, GLCD_BLACK);
+
+    if (model->page)
+    {
+        // stopping short of x=127 leaves print_menu_outlines()' frame down that column
+        glcd_text(display, (uint8_t)(95 - glcd_text_width(Terminal3x5, model->page) / 2),
+                  11, model->page, Terminal3x5, GLCD_BLACK);
+        glcd_rect_invert(display, 65, 9, 61, 8);
+    }
+
+    draw_offset_column(display, 65, 61, 20, model->actuators, model->actuator_count,
+                       model->actuator_hover, model->actuator_taken,
+                       model->armed, model->blink_reverse ? 0 : 1);
+
+    for (uint8_t i = 0; i < FOOTSWITCHES_COUNT; i++)
+        ledz_off(hardware_leds(i), WHITE);
+
+    led_state_t led_state;
+    led_state.color = BUILDER_COLOR;
+
+    ledz_t* led = hardware_leds(3);
+    set_ledz_trigger_by_color_id(led, LED_ON, led_state);
+
+    led = hardware_leds(4);
+    set_ledz_trigger_by_color_id(led, LED_OFF, led_state);
+
+    led = hardware_leds(5);
+    set_ledz_trigger_by_color_id(led, LED_ON, led_state);
+
+    led = hardware_leds(6);
+    set_ledz_trigger_by_color_id(led, LED_OFF, led_state);
+}
+
+void screen_notice(const char *first, const char *second)
+{
+    glcd_t *display;
+    display = hardware_glcds(0);
+
+    uint8_t height = second ? 25 : 17;
+    uint8_t top = (DISPLAY_HEIGHT / 2) - (height / 2);
+    uint8_t width;
+
+    /*
+     * Wide enough for the longest notice, which is 111 pixels. Worth checking when one
+     * changes: glcd_text() does not clip -- st7565p_set_pixel() wraps -- so text wider
+     * than its box is not cut off at the edge, it reappears on the other side.
+     */
+    glcd_rect_fill(display, 4, top, DISPLAY_WIDTH - 8, height, GLCD_WHITE);
+    glcd_rect(display, 4, top, DISPLAY_WIDTH - 8, height, GLCD_BLACK);
+
+    if (first)
+    {
+        width = glcd_text_width(Terminal3x5, first);
+        glcd_text(display, (DISPLAY_WIDTH - width) / 2, top + 6, first,
+                  Terminal3x5, GLCD_BLACK);
+    }
+
+    if (second)
+    {
+        width = glcd_text_width(Terminal3x5, second);
+        glcd_text(display, (DISPLAY_WIDTH - width) / 2, top + 15, second,
+                  Terminal3x5, GLCD_BLACK);
+    }
 }
 
 /*

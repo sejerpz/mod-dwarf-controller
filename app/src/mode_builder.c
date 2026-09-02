@@ -21,13 +21,22 @@
 #include "screen.h"
 #include "ui_comm.h"
 #include "mode_builder.h"
-#include "logging.h"
+#include "plugin_map.h"
+#include "mode_builder_connmanager.h"
+#include "mode_builder_plugin_manager.h"
+#include "mode_builder_bindings_manager.h"
 
 /*
 ************************************************************************************************************************
 *           LOCAL DEFINES
 ************************************************************************************************************************
 */
+// the plugin_map viewport: inside the outlines print_menu_outlines() draws, above the footer
+#define PLUGIN_MAP_VIEW_X 2
+#define PLUGIN_MAP_VIEW_Y 9
+#define PLUGIN_MAP_VIEW_W 124
+#define PLUGIN_MAP_VIEW_H 43
+
 #define PAGE_DIR_DOWN 0
 #define PAGE_DIR_UP 1
 #define PAGE_DIR_INIT 2
@@ -48,9 +57,17 @@
 enum UIStates {
     DEFAULT,
     PLUGIN_SELECT,
-    PLUGIN_EDIT
+    PLUGIN_EDIT,
+    CONNECTIONS,
+    ADD_PLUGIN,
+    BINDINGS
 };
 
+/*
+ * One line of the connection menu. A line is a box at the far end and a signal type, not a
+ * pair of ports: mod-ui groups them that way because the picture does, so a stereo pair is
+ * one line here and deleting it drops both cables.
+ */
 
 /*
 ************************************************************************************************************************
@@ -65,13 +82,21 @@ enum UIStates {
 ************************************************************************************************************************
 */
 static enum UIStates uiState = DEFAULT;
-static bp_list_t *g_plugins; /* list of pedalboard plugins effects */
-static uint8_t g_plugins_loaded = 0;
-static uint8_t g_current_plugin = 0;
-static uint8_t g_selected_plugin = 0;
 static list_clone_t g_list_clone[ENCODERS_COUNT];
 static bool g_list_click = 0;
-static menu_item_t pluginMenuItem;
+
+/*
+ * The pedalboard graph, as mod-ui described it. Not a bitmap: the server sends a display
+ * list of boxes, port stubs and cables in scene coordinates and plugin_map.c draws it with
+ * the GLCD primitives, because a pannable bitmap would be ~65kB on a part with 96kB of
+ * SRAM. The same records are the hit map: the rect of a box is both what gets drawn and
+ * what gets selected.
+ */
+static plugin_map_t g_plugin_map;
+static uint8_t g_plugin_map_loaded = 0;
+/* the selected plugin's instance id as text, for CMD_BUILDER_CONTROL_LIST */
+static char g_selected_uid[12];
+
 
 static plugin_edit_t plugin_edit; // data for the plugin edit screen
 
@@ -114,7 +139,7 @@ static void encoder_control_add(control_t *control);
 static void encoder_control_rm(uint8_t hw_id);
 static void reset_list_encoders(void);
 static void clone_list_encoders(control_t *control);
-static void request_plugins(uint8_t dir);
+static void request_plugin_map(int16_t focus_id, uint8_t initial);
 static void request_control_page(control_t *control, uint8_t dir);
 static void send_control_set(control_t *control);
 
@@ -183,7 +208,13 @@ static void encoder_control_add(control_t *control)
             (control->value - control->minimum) / ((control->maximum - control->minimum) / control->steps);
     }
 
-    if (naveg_get_current_mode() == MODE_BUILDER)
+    /*
+     * Only where the encoders are what is on the panel. A control can arrive while the
+     * builder is showing something else entirely -- binding a parameter from the bindings
+     * screen has the host send one straight back -- and drawing it there would paint the
+     * control over a screen the user is still working in.
+     */
+    if (naveg_get_current_mode() == MODE_BUILDER && uiState == PLUGIN_EDIT)
     {
         //if screen overlay active, update that
         if ((hardware_get_overlay_counter() || !control->scroll_dir) && (plugin_edit.current_overlay_control_index == control->hw_id))
@@ -197,10 +228,6 @@ static void encoder_control_add(control_t *control)
                 screen_encoder(control, control->hw_id);
         }
     }
-    else
-    {
-        trace("not builder mode");
-    }
 
     xSemaphoreGive(module_mutex);
 }
@@ -210,7 +237,7 @@ static void encoder_control_rm(uint8_t hw_id)
 {
     if (hw_id > ENCODERS_COUNT) return;
 
-    if (naveg_get_current_mode() == MODE_BUILDER) 
+    if (naveg_get_current_mode() == MODE_BUILDER)
     {
         xSemaphoreTake(module_mutex, portMAX_DELAY);
 
@@ -222,14 +249,17 @@ static void encoder_control_rm(uint8_t hw_id)
             data_free_control(control);
 
         }
-        if (hardware_get_overlay_counter() == 0)
+
+        /*
+         * Cleared on screen only where the encoders are what is on the panel. Removing a
+         * plugin, or binding a parameter, has the host send controls back on its own, and
+         * every one of them takes the previous one off first -- which would wipe a strip of
+         * whatever screen the builder is actually showing.
+         */
+        if (uiState == PLUGIN_EDIT && hardware_get_overlay_counter() == 0)
             screen_encoder(NULL, hw_id);
 
         xSemaphoreGive(module_mutex);
-    }
-    else
-    {
-        trace("not builder mode");
     }
 }
 
@@ -324,103 +354,262 @@ static void clone_list_encoders(control_t *control)
 
 
 /*
- * Plugin effect navigation
+ * Pedalboard graph navigation
  */
 
- static void parse_plugins_list(void *data, menu_item_t *item)
+static void parse_plugin_map(void *data, menu_item_t *item)
 {
     (void) item;
     char **list = data;
+    uint32_t i;
+
+    g_plugin_map_loaded = 0;
 
     //error, dont parse when mod-ui gives error
-    if (atoi(list[1]) == -1)
+    if (!list || !list[0] || !list[1] || atoi(list[1]) == -1)
         return;
 
-    uint32_t count = strarr_length(&list[5]);
+    if (!list[2]) return;
 
-    // free the navigation pedalboads list
-    if (g_plugins)
-        data_free_plugins_list(g_plugins);
+    /*
+     * The display list is one message with spaces inside it, and protocol.c has already
+     * split the whole thing into tokens. strarr_split() writes the separators over in
+     * place, so the tokens are still contiguous in the rx buffer: putting the spaces back
+     * rebuilds the original text without a second 3.5kB buffer, which this device does not
+     * have to spare. Labels are sanitised server side, so no token can contain a space or
+     * a quotation mark that would have made the split lossy.
+     */
+    for (i = 2; list[i + 1] != NULL; i++)
+        list[i][strlen(list[i])] = ' ';
 
-    // parses the list
-    g_plugins = data_parse_plugins_list(&list[5], count);
+    g_plugin_map_loaded = plugin_map_parse(&g_plugin_map, list[2]);
 
-    if (g_plugins) {
-        g_plugins->menu_max = (atoi(list[2]));
-        g_plugins->page_min = (atoi(list[3]));
-        g_plugins->page_max = (atoi(list[4])); 
-    
-        g_plugins_loaded = 1;
+    if (g_plugin_map_loaded)
+    {
+        /* mod-ui centred the window on the node we asked for, so carry the selection over */
+        int8_t focus = plugin_map_index_of(&g_plugin_map, g_plugin_map.focus_id);
+
+        if (focus == BM_NONE)
+        {
+            g_plugin_map.selected = BM_NONE;
+            if (g_plugin_map.n_nodes > 0)
+                plugin_map_select(&g_plugin_map, 0);
+        }
+        else
+        {
+            plugin_map_select(&g_plugin_map, focus);
+        }
     }
-    else
-        g_plugins_loaded = 0;
-
-    item->data.list = g_plugins->names;
-    item->data.list_count = count / 2; // why count is two time the effective # elements?
-    item->data.selected = item->data.hover = g_current_plugin;
 }
 
 /*
- * ask a list of loaded plugins in the current pedalboard
+ * ask for the window of the pedalboard graph around <focus_id>
  */
-static void request_plugins(uint8_t dir)
+static void request_plugin_map(int16_t focus_id, uint8_t initial)
 {
     uint8_t i;
-    char buffer[40];
+    char buffer[32];
     memset(buffer, 0, sizeof buffer);
 
     // sets the response callback
-    ui_comm_webgui_set_response_cb(parse_plugins_list, &pluginMenuItem);
+    ui_comm_webgui_set_response_cb(parse_plugin_map, NULL);
     //clear the buffer
     ui_comm_webgui_clear_tx_buffer();
 
-    // send command plugin list
-    // response:  "r 1 4 0 4 "My Autopanner" "dynamic_1" "Distortion" "ojd_1"...
-    i = copy_command((char *)buffer, CMD_DWARF_BUILDER_PLUGINS);
+    // send command plugin_map
+    // response: "r 1 M 392 124 7 amc 3 12 40 ; N 3 p 12 20 30 12 0 0 0 REVERB ; ..."
+    i = copy_command((char *)buffer, CMD_BUILDER_PLUGIN_MAP);
 
     uint8_t bitmask = 0;
-    if (dir == 1)
-        bitmask |= FLAG_PAGINATION_PAGE_UP;
-    else if (dir == 2)
+    if (initial)
         bitmask |= FLAG_PAGINATION_INITIAL_REQ;
 
-    // insert the direction on buffer
+    // insert the flags on buffer
     i += int_to_str(bitmask, &buffer[i], sizeof(buffer) - i, 0);
 
     // inserts one space
     buffer[i++] = ' ';
 
-    // insert the current hover on buffer
-    if ((dir == PAGE_DIR_INIT)) {
-        if (g_plugins && g_plugins->selected == -1)
-            i += int_to_str(0, &buffer[i], sizeof(buffer) - i, 0);
-        else
-            i += int_to_str(g_current_plugin, &buffer[i], sizeof(buffer) - i, 0);
-    }
-    else
-        i += int_to_str(g_plugins->hover, &buffer[i], sizeof(buffer) - i, 0);
+    // insert the node to centre on; ignored by mod-ui on an initial request
+    i += int_to_str(focus_id, &buffer[i], sizeof(buffer) - i, 0);
 
     buffer[i++] = 0;
-
-    int32_t prev_hover = g_current_plugin;
-    int32_t prev_selected = g_current_plugin;
-
-    if (g_plugins) {
-        prev_hover = g_plugins->hover;
-        prev_selected = g_plugins->selected;
-    }
 
     // sends the data to GUI
     ui_comm_webgui_send(buffer, i);
 
-    // waits the pedalboards list be received
+    // waits the display list be received
+    ui_comm_webgui_wait_response();
+}
+
+/*
+ * The connection menu of the selected box.
+ */
+
+/*
+ * ADD: the plugin manager takes the screen until something is added or the user leaves.
+ */
+/*
+ * A plugin is armed before it is removed: the first press starts it flashing, the second
+ * is the one that takes it off the board. Losing a plugin and its settings to a mis-hit
+ * button is not something an undo would get back, and the graph screen has no undo.
+ * hardware_timestamp() counts in units of 500us, so two ticks to the millisecond.
+ */
+#define BM_DEL_BLINK_TICKS  (400 * 2)
+
+static uint8_t g_del_armed;
+static uint8_t g_del_off;
+static uint32_t g_del_stamp;
+
+static void del_disarm(void)
+{
+    g_del_armed = 0;
+    g_del_off = 0;
+    plugin_map_set_blink(&g_plugin_map, 0);
+}
+
+static void request_remove(int16_t node_id)
+{
+    uint8_t i;
+    char buffer[24];
+    memset(buffer, 0, sizeof buffer);
+
+    ui_comm_webgui_clear_tx_buffer();
+
+    i = copy_command((char *)buffer, CMD_BUILDER_PLUGIN_DELETE);
+    i += int_to_str(node_id, &buffer[i], sizeof(buffer) - i, 0);
+    buffer[i++] = 0;
+
+    ui_comm_webgui_send(buffer, i);
+    ui_comm_webgui_wait_response();
+}
+
+/*
+ * The host answers with the state the box lands in, before it has made the change: a
+ * bypass addressed to this panel sends it commands of its own, and it cannot serve one
+ * while it is spinning here.
+ */
+static int8_t g_bypass_state = BM_NONE;
+
+static void parse_bypass(void *data, menu_item_t *item)
+{
+    (void) item;
+    char **list = data;
+
+    g_bypass_state = BM_NONE;
+
+    if (!list || !list[0] || !list[1] || atoi(list[1]) == -1) return;
+    if (!list[2]) return;
+
+    g_bypass_state = (int8_t) atoi(list[2]);
+}
+
+static void plugin_map_toggle_bypass(void)
+{
+    const plugin_map_node_t *node = plugin_map_selected(&g_plugin_map);
+    uint8_t i;
+    char buffer[24];
+
+    // the capture and playback boxes are drawn like the rest but have nothing to turn off
+    if (!node || node->kind != BM_PLUGIN) return;
+
+    memset(buffer, 0, sizeof buffer);
+
+    ui_comm_webgui_set_response_cb(parse_bypass, NULL);
+    ui_comm_webgui_clear_tx_buffer();
+
+    i = copy_command((char *)buffer, CMD_BUILDER_PLUGIN_BYPASS);
+    i += int_to_str(node->id, &buffer[i], sizeof(buffer) - i, 0);
+    buffer[i++] = 0;
+
+    ui_comm_webgui_send(buffer, i);
     ui_comm_webgui_wait_response();
 
-    if (g_plugins) {
-        g_plugins->hover = prev_hover;
-        g_plugins->selected = prev_selected;
-    }
+    if (g_bypass_state != BM_NONE)
+        plugin_map_set_bypassed(&g_plugin_map, g_plugin_map.selected,
+                                (uint8_t) g_bypass_state);
 }
+
+static void plugin_map_delete_plugin(void)
+{
+    const plugin_map_node_t *node = plugin_map_selected(&g_plugin_map);
+    int16_t landing;
+
+    // the capture and playback boxes are drawn like the rest but are not on the board
+    if (!node || node->kind != BM_PLUGIN)
+    {
+        del_disarm();
+        return;
+    }
+
+    if (!g_del_armed)
+    {
+        g_del_armed = 1;
+        g_del_off = 0;
+        g_del_stamp = hardware_timestamp();
+        return;
+    }
+
+    // somewhere to stand once the box under the cursor is gone
+    landing = (node->next != BM_NONE) ? node->next : node->prev;
+
+    request_remove(node->id);
+    del_disarm();
+
+    BM_refresh_graph(landing);
+}
+
+static void plugin_map_add_plugin(void)
+{
+    const plugin_map_node_t *node = plugin_map_selected(&g_plugin_map);
+
+    del_disarm();
+
+    BM_plugin_manager_open(node ? node->id : BM_NONE);
+
+    if (BM_plugin_manager_is_open()) uiState = ADD_PLUGIN;
+
+    // the lists are in hand and the state is set, so put them on the panel: the button
+    // branches redraw one by one and this one was the only path in that did not
+    BM_print_screen();
+}
+
+/*
+ * Moves the selection one box along mod-ui's walk of the board.
+ */
+static void plugin_map_move(uint8_t direction)
+{
+    int16_t target;
+    int8_t index;
+
+    if (!g_plugin_map_loaded || g_plugin_map.selected == BM_NONE) return;
+
+    target = plugin_map_step(&g_plugin_map, g_plugin_map.selected, direction);
+
+    // the two ends of the board; the walk does not wrap
+    if (target == BM_NONE) return;
+
+    index = plugin_map_index_of(&g_plugin_map, target);
+
+    if (index == BM_NONE)
+    {
+        /*
+         * The next box is outside the window mod-ui sent, which is how a board too big
+         * for one message is crossed: ask for the window centred on it and carry on. The
+         * walk order is built over the whole board, so this always names a real box.
+         */
+        request_plugin_map(target, 0);
+
+        if (!g_plugin_map_loaded) return;
+
+        index = plugin_map_index_of(&g_plugin_map, target);
+        if (index == BM_NONE) return;
+    }
+
+    plugin_map_select(&g_plugin_map, index);
+    BM_print_screen();
+}
+
 
 static void parse_plugins_control(void *data, menu_item_t *item)
 {
@@ -453,7 +642,7 @@ static void request_plugin_controls(const char* uid, uint8_t start_index, uint8_
     ui_comm_webgui_clear_tx_buffer();
 
     // send command control list
-    i = copy_command((char *)buffer, CMD_DWARF_BUILDER_CONTROLS);
+    i = copy_command((char *)buffer, CMD_BUILDER_CONTROL_LIST);
 
     //buffer[i++] = '"';
     strcpy(&buffer[i], uid);
@@ -532,7 +721,7 @@ static void request_control_page(control_t *control, uint8_t dir)
     uint8_t i;
     uint8_t hw_id = control->hw_id;
 
-    i = copy_command(buffer, CMD_DWARF_BUILDER_CONTROL_PAGE);
+    i = copy_command(buffer, CMD_BUILDER_CONTROL_PAGE);
 
     // insert the hw_id on buffer
     i += int_to_str(hw_id, &buffer[i], sizeof(buffer) - i, 0);
@@ -593,15 +782,21 @@ static void request_control_page(control_t *control, uint8_t dir)
 }
 
 /*
- * select a plugin from the list
+ * open the plugin edit screen for a node of the graph
  */
-static void list_select_plugin(uint8_t index)
+static void select_plugin_node(const plugin_map_node_t *node)
 {
-    if (!g_plugins) return;
+    if (!node) return;
 
-    g_selected_plugin = index;
-    plugin_edit.plugin_name = g_plugins->names[index];
-    plugin_edit.plugin_uid = g_plugins->uids[index];
+    /*
+     * The wire id of a plugin node is the mapper's instance id, which is exactly what
+     * CMD_BUILDER_CONTROL_LIST takes, so the graph view needs no second lookup to go
+     * from the box on screen to the controls behind it.
+     */
+    int_to_str(node->id, g_selected_uid, sizeof(g_selected_uid), 0);
+
+    plugin_edit.plugin_name = node->label;
+    plugin_edit.plugin_uid = g_selected_uid;
     plugin_edit.current_page = 0;
     plugin_edit.page_count = 0;
     plugin_edit.controls_count = 0;
@@ -618,7 +813,7 @@ static void send_control_set(control_t *control)
     char buffer[128];
     uint8_t i;
 
-    i = copy_command(buffer, CMD_DWARF_BUILDER_CONTROL_SET);
+    i = copy_command(buffer, CMD_BUILDER_CONTROL_SET);
 
     // insert the hw_id on buffer
     i += int_to_str(control->hw_id, &buffer[i], sizeof(buffer) - i, 0);
@@ -1020,7 +1215,16 @@ void BM_init(void)
     plugin_edit.current_page = 0;
     plugin_edit.page_count = 0;
     plugin_edit.current_overlay_control_index = -1;
-    pluginMenuItem.name = strdup("Plugins");
+
+    /*
+     * The viewport sits inside the frame print_menu_outlines() draws and above the footer,
+     * so the graph is clipped to it rather than painted over the chrome.
+     */
+    BM_conn_manager_init();
+    BM_bindings_manager_init();
+    BM_plugin_manager_init();
+    plugin_map_init(&g_plugin_map);
+    plugin_map_set_view(&g_plugin_map, PLUGIN_MAP_VIEW_X, PLUGIN_MAP_VIEW_Y, PLUGIN_MAP_VIEW_W, PLUGIN_MAP_VIEW_H);
 }
 
 void BM_clear(void)
@@ -1029,21 +1233,139 @@ void BM_clear(void)
 
 
 /*
+ * The two footswitches that are not the page one: B puts the board back on the picture, C
+ * reads it as a list. Not a toggle on one switch -- each names a view, so a glance at which
+ * one is lit says what is on screen without pressing anything.
+ */
+void BM_foot_change(uint8_t foot)
+{
+    uint8_t list;
+
+    if (foot == 0) list = 0;
+    else if (foot == 1) list = 1;
+    else return;                    // the third foot is not ours
+
+    /*
+     * Wherever the board is what is on screen, and only there: over the board itself, and
+     * inside the connection picker, where the picture is the menu. The other popups own
+     * the panel while they are up.
+     */
+    if (uiState == PLUGIN_SELECT)
+        plugin_map_set_view_mode(&g_plugin_map, list ? PLUGIN_MAP_VIEW_LIST : PLUGIN_MAP_VIEW_GRAPH);
+    else if (uiState == CONNECTIONS && BM_conn_manager_is_picking())
+        BM_conn_manager_view(list);
+    else
+        return;
+
+    BM_print_screen();
+}
+
+/*
+ * The host watches the board only while we are looking at it: one command on the way in,
+ * one on the way out, and no timer running on the server the rest of the time.
+ */
+static void request_change_notify(uint8_t on)
+{
+    uint8_t i;
+    char buffer[24];
+    memset(buffer, 0, sizeof buffer);
+
+    ui_comm_webgui_set_response_cb(NULL, NULL);
+    ui_comm_webgui_clear_tx_buffer();
+
+    i = copy_command((char *)buffer, CMD_BUILDER_PLUGIN_NOTIFY);
+    i += int_to_str(on, &buffer[i], sizeof(buffer) - i, 0);
+    buffer[i++] = 0;
+
+    ui_comm_webgui_send(buffer, i);
+    ui_comm_webgui_wait_response();
+}
+
+/*
+ * Set from the protocol callback when the host says the board has changed. Acted on in
+ * BM_tick() rather than there: fetching the graph is a command, and a callback of a
+ * received one cannot send commands.
+ */
+static volatile uint8_t g_plugin_map_stale;
+
+void BM_plugin_map_stale(void)
+{
+    g_plugin_map_stale = 1;
+}
+
+/*
+ * Whether the host is watching the board for us.
+ *
+ * Kept because BM_exit() must not send anything on the two paths that leave the builder
+ * from inside a protocol callback -- a pedalboard load, and the host coming back up.
+ * protocol_parse() writes the reply only after the callback returns, so a command sent
+ * from one and waited on is a deadlock. On those two paths the watch is dropped without a
+ * word: the host has either stopped it itself, or never knew about it.
+ */
+static uint8_t g_watching;
+
+void BM_forget_watch(void)
+{
+    g_watching = 0;
+    g_plugin_map_stale = 0;
+}
+
+/*
  * Called on builder mode enter
  */
 void BM_enter(void)
 {
     uiState = PLUGIN_SELECT;
-    g_current_plugin = 0;
-    g_selected_plugin = 0;
-    request_plugins(PAGE_DIR_INIT);
+    // an arm does not survive leaving the mode: coming back is not a confirmation either
+    del_disarm();
+    g_plugin_map_stale = 0;
+    request_plugin_map(BM_NONE, 1);
+
+    // ... and only now, so the host takes note of the board we have just fetched
+    request_change_notify(1);
+    g_watching = 1;
+
+    /*
+     * The first screen looks at the middle of the board, not at the selection. mod-ui
+     * centres every column on one axis and puts the hardware pairs across it, so the
+     * middle of the canvas is the middle of IN1/IN2 -- centring on IN1 alone would sit it
+     * in the centre of the panel and push IN2 below. No guard needed on the pair falling
+     * outside: it is centred too, and shorter than the viewport.
+     */
+    if (g_plugin_map_loaded)
+    {
+        g_plugin_map.offset_x = 0;
+        g_plugin_map.offset_y = (g_plugin_map.scene_height - g_plugin_map.view.height) / 2;
+        plugin_map_scroll(&g_plugin_map, 0, 0);
+    }
+
     BM_set_state();
+}
+
+/*
+ * Called on builder mode exit, from wherever the panel leaves it. Tells the host to stop
+ * watching the board: nothing should be running on the server for a screen nobody is on.
+ */
+void BM_exit(void)
+{
+    g_plugin_map_stale = 0;
+
+    if (!g_watching) return;
+
+    g_watching = 0;
+    request_change_notify(0);
 }
 
 
 /*
  * Called on builder activate (eg. from menu-shift button)
  */
+void BM_refresh_graph(int16_t focus)
+{
+    request_plugin_map(focus, 0);
+}
+
+
 void BM_set_state(void)
 {
     //CM_set_leds();
@@ -1053,15 +1375,38 @@ void BM_set_state(void)
 
 void BM_encoder_click(uint8_t encoder)
 {
-    if (uiState == PLUGIN_SELECT) {
-        if (encoder == 0) {
-            // if there is some plugin
-            if (pluginMenuItem.data.list_count > 0) {
+    if (uiState == ADD_PLUGIN) {
+        BM_plugin_manager_click(encoder);
+        BM_print_screen();
+        return;
+    }
 
+    if (uiState == CONNECTIONS) {
+        if (encoder == 0 || encoder == 1) {
+            BM_conn_manager_click();
+            BM_print_screen();
+        }
+        return;
+    }
+
+    if (uiState == PLUGIN_SELECT) {
+        del_disarm();
+
+        // opening a plugin is the first encoder's click; there is no button for it
+        if (encoder == 0) {
+            const plugin_map_node_t *node = plugin_map_selected(&g_plugin_map);
+
+            // the hardware in/out boxes are part of the picture but have nothing to edit
+            if (node && node->kind == BM_PLUGIN) {
                 uiState = PLUGIN_EDIT;
-                list_select_plugin(g_current_plugin);
+                select_plugin_node(node);
                 BM_print_screen();
             }
+        }
+        // and the second's turns the box off, or back on
+        else if (encoder == 1) {
+            plugin_map_toggle_bypass();
+            BM_print_screen();
         }
     } else {
         BM_toggle_control(encoder);
@@ -1069,19 +1414,65 @@ void BM_encoder_click(uint8_t encoder)
 }
 
 
+/*
+ * One encoder walks the whole board, box by box: left to right by column, top to bottom
+ * inside a column. The second opens and closes the connection popup -- right to open, left
+ * off its first row to close -- and the third is free while the graph is on screen.
+ */
+void BM_encoder_hold(uint8_t encoder)
+{
+    if (uiState != ADD_PLUGIN) return;
+
+    BM_plugin_manager_hold(encoder);
+    BM_print_screen();
+}
+
+
+void BM_encoder_released(uint8_t encoder)
+{
+    if (uiState != ADD_PLUGIN) return;
+
+    // the click that follows is swallowed by the plugin manager, which knows it was a scrub
+    BM_plugin_manager_released(encoder);
+}
+
+
 void BM_up(uint8_t encoder)
 {
     if (uiState == PLUGIN_SELECT) {
-        if (encoder == 0) {
-            if (g_current_plugin > 0)
-                g_current_plugin--;
-            else
-                g_current_plugin = pluginMenuItem.data.list_count - 1;
+        // an armed DEL is about the box under the cursor, so moving off it disarms
+        del_disarm();
 
-            pluginMenuItem.data.selected = g_plugins->selected = g_current_plugin;
-            pluginMenuItem.data.hover = g_plugins->hover = g_current_plugin;
+        if (encoder == 0)
+            plugin_map_move(PLUGIN_MAP_PREV);
+        /*
+         * The second encoder opens the popup one way and closes it the other: turning it
+         * right opens, turning it left off the first row closes. Turning left here, with
+         * nothing open, has nothing to undo.
+         */
+    } else if (uiState == ADD_PLUGIN) {
+        // the overlay owns the second encoder while it is up, to walk its description
+        if (BM_plugin_manager_info_is_open()) {
+            if (encoder == 1) BM_plugin_manager_info_scroll(-1);
+        } else {
+            BM_plugin_manager_turn(encoder, -1);
+        }
+        BM_print_screen();
+    } else if (uiState == CONNECTIONS) {
+        if (encoder == 1) {
+            // stepping back off the first row closes the popup, so follow it out
+            BM_conn_manager_turn(-1);
+            if (!BM_conn_manager_is_open()) uiState = PLUGIN_SELECT;
             BM_print_screen();
         }
+        else if (encoder == 2) {
+            // the cables behind the hovered row, named one at a time under the list
+            BM_conn_manager_pairs_turn(-1);
+            BM_print_screen();
+        }
+    } else if (uiState == BINDINGS) {
+        BM_bindings_manager_turn(encoder, -1);
+        BM_print_screen();
     } else if (uiState == PLUGIN_EDIT) {
         BM_dec_control(encoder);
     }
@@ -1090,16 +1481,41 @@ void BM_up(uint8_t encoder)
 void BM_down(uint8_t encoder)
 {
     if (uiState == PLUGIN_SELECT) {
-        if (encoder == 0) {
-            if (g_current_plugin >= pluginMenuItem.data.list_count - 1)
-                g_current_plugin = 0;
-            else
-                g_current_plugin++;
+        del_disarm();
 
-            pluginMenuItem.data.selected = g_plugins->selected = g_current_plugin;
-            pluginMenuItem.data.hover = g_plugins->hover = g_current_plugin;
+        if (encoder == 0)
+            plugin_map_move(PLUGIN_MAP_NEXT);
+        else if (encoder == 1) {
+            // rightwards only; leftwards is what closes it
+            BM_conn_manager_open(&g_plugin_map);
+            if (BM_conn_manager_is_open()) uiState = CONNECTIONS;
             BM_print_screen();
         }
+        else if (encoder == 2) {
+            // the bindings screen has three columns of its own, so BACK is what leaves it
+            BM_bindings_manager_open(&g_plugin_map);
+            if (BM_bindings_manager_is_open()) uiState = BINDINGS;
+            BM_print_screen();
+        }
+    } else if (uiState == ADD_PLUGIN) {
+        if (BM_plugin_manager_info_is_open()) {
+            if (encoder == 1) BM_plugin_manager_info_scroll(1);
+        } else {
+            BM_plugin_manager_turn(encoder, 1);
+        }
+        BM_print_screen();
+    } else if (uiState == CONNECTIONS) {
+        if (encoder == 1) {
+            BM_conn_manager_turn(1);
+            BM_print_screen();
+        }
+        else if (encoder == 2) {
+            BM_conn_manager_pairs_turn(1);
+            BM_print_screen();
+        }
+    } else if (uiState == BINDINGS) {
+        BM_bindings_manager_turn(encoder, 1);
+        BM_print_screen();
     } else if (uiState == PLUGIN_EDIT) {
         BM_inc_control(encoder);
     }
@@ -1114,7 +1530,33 @@ void BM_button_pressed(uint8_t button)
     {
         //enter menu
         case 0:
-            if (uiState == PLUGIN_EDIT) 
+            if (uiState == ADD_PLUGIN)
+            {
+                // BACK takes the overlay away first, and the lists only after it
+                if (BM_plugin_manager_info_is_open())
+                {
+                    BM_plugin_manager_info_close();
+                    BM_print_screen();
+                    break;
+                }
+
+                BM_plugin_manager_close();
+                uiState = PLUGIN_SELECT;
+                BM_print_screen();
+            }
+            else if (uiState == CONNECTIONS)
+            {
+                BM_conn_manager_back();
+                if (!BM_conn_manager_is_open()) uiState = PLUGIN_SELECT;
+                BM_print_screen();
+            }
+            else if (uiState == BINDINGS)
+            {
+                BM_bindings_manager_close();
+                uiState = PLUGIN_SELECT;
+                BM_print_screen();
+            }
+            else if (uiState == PLUGIN_EDIT) 
             {
                 uiState = PLUGIN_SELECT;
                 BM_print_screen();
@@ -1127,32 +1569,72 @@ void BM_button_pressed(uint8_t button)
         break;
 
         case 1:
-            if (uiState == PLUGIN_EDIT) {
+            if (uiState == ADD_PLUGIN)
+            {
+                int16_t added = BM_plugin_manager_add();
+
+                if (!BM_plugin_manager_is_open()) {
+                    uiState = PLUGIN_SELECT;
+
+                    // land on what was just added, so it is there to wire up
+                    if (added != BM_NONE) request_plugin_map(added, 0);
+                }
+
+                BM_print_screen();
+            }
+            else if (uiState == CONNECTIONS)
+            {
+                BM_conn_manager_delete();
+                BM_print_screen();
+            }
+            else if (uiState == BINDINGS)
+            {
+                BM_bindings_manager_add();
+                BM_print_screen();
+            }
+            else if (uiState == PLUGIN_EDIT) {
                 if (plugin_edit.current_page > 0) {
                     plugin_edit.current_page--;
                     BM_print_screen();
                     request_current_page_controls();
                 }
             }
+            else
+            {
+                plugin_map_add_plugin();
+            }
         break;
         
         case 2:
-           if (uiState == PLUGIN_EDIT) 
+            if (uiState == PLUGIN_SELECT)
+            {
+                plugin_map_delete_plugin();
+                BM_print_screen();
+            }
+            else if (uiState == ADD_PLUGIN)
+            {
+                BM_plugin_manager_filter();
+                BM_print_screen();
+            }
+            else if (uiState == CONNECTIONS)
+            {
+                BM_conn_manager_filter();
+                BM_print_screen();
+            }
+            else if (uiState == BINDINGS)
+            {
+                BM_bindings_manager_del();
+                BM_print_screen();
+            }
+            else if (uiState == PLUGIN_EDIT) 
             {
                 /* next page */
                 if (plugin_edit.current_page < plugin_edit.page_count - 1) {
                     plugin_edit.current_page++;
                     request_current_page_controls();
                 }
+                BM_print_screen();
             }
-            else
-            {
-                if (pluginMenuItem.data.list_count > 0) {
-                    uiState = PLUGIN_EDIT;
-                    list_select_plugin(g_current_plugin);
-                }
-            }
-            BM_print_screen();
         break;
     }
 }
@@ -1212,6 +1694,56 @@ void BM_close_overlay(void)
 
 
 
+void BM_tick(void)
+{
+    if (naveg_get_current_mode() != MODE_BUILDER) return;
+
+    /*
+     * The board changed under us. Done here rather than where the news arrived, and only
+     * over the graph itself: the popups own the panel while they are up, and refetching
+     * underneath one would move the ground they are standing on.
+     */
+    if (g_plugin_map_stale && uiState == PLUGIN_SELECT)
+    {
+        const plugin_map_node_t *node = plugin_map_selected(&g_plugin_map);
+
+        g_plugin_map_stale = 0;
+
+        // keep looking at the same box where it is still there; the request falls back to
+        // the host's own choice of focus when it is not
+        BM_refresh_graph(node ? node->id : BM_NONE);
+        BM_print_screen();
+        return;
+    }
+
+    if (uiState == CONNECTIONS)
+    {
+        if (BM_conn_manager_tick())
+            BM_print_screen();
+
+        return;
+    }
+
+    if (uiState == BINDINGS)
+    {
+        if (BM_bindings_manager_tick())
+            BM_print_screen();
+
+        return;
+    }
+
+    if (uiState == PLUGIN_SELECT && g_del_armed)
+    {
+        if ((hardware_timestamp() - g_del_stamp) < BM_DEL_BLINK_TICKS) return;
+
+        g_del_stamp = hardware_timestamp();
+        g_del_off = !g_del_off;
+        plugin_map_set_blink(&g_plugin_map, g_del_off);
+        BM_print_screen();
+    }
+}
+
+
 void BM_print_screen(void)
 {
     xSemaphoreTake(module_mutex, portMAX_DELAY);
@@ -1219,7 +1751,48 @@ void BM_print_screen(void)
     switch (uiState)
     {
         case PLUGIN_SELECT:
-            screen_plugins_list(&pluginMenuItem);
+            screen_plugin_map(&g_plugin_map, g_plugin_map_loaded, g_del_armed, !g_del_off);
+        break;
+        case BINDINGS:
+        {
+            bindings_t model;
+
+            BM_bindings_manager_fill(&model);
+            screen_bindings(&model);
+        }
+        break;
+        case ADD_PLUGIN:
+        {
+            // the info overlay covers the two lists for as long as it is up
+            if (BM_plugin_manager_info_is_open())
+            {
+                plugin_info_t info;
+
+                BM_plugin_manager_fill_info(&info);
+                screen_plugin_info(&info);
+                break;
+            }
+
+            plugin_manager_t model;
+
+            BM_plugin_manager_fill(&model);
+            screen_plugin_manager(&model);
+        }
+        break;
+        case CONNECTIONS:
+        {
+            connections_t model;
+
+            // while a destination is being chosen the picture is the menu
+            if (BM_conn_manager_is_picking())
+            {
+                screen_connection_pick(&g_plugin_map, BM_conn_manager_pick_title());
+                break;
+            }
+
+            BM_conn_manager_fill(&model);
+            screen_connections(&model);
+        }
         break;
         case PLUGIN_EDIT:
             screen_plugin_edit(&plugin_edit);

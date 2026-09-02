@@ -523,6 +523,9 @@ void naveg_enc_released(uint8_t encoder)
 
         NM_encoder_released(encoder);
     }
+
+    if (g_device_mode == MODE_BUILDER)
+        BM_encoder_released(encoder);
 }
 
 void naveg_enc_hold(uint8_t encoder)
@@ -542,6 +545,9 @@ void naveg_enc_hold(uint8_t encoder)
 
         NM_encoder_hold(encoder);
     }
+
+    if (g_device_mode == MODE_BUILDER)
+        BM_encoder_hold(encoder);
 
     if (g_self_test_mode)
         naveg_enc_enter(encoder);
@@ -837,7 +843,9 @@ void naveg_foot_change(uint8_t foot, uint8_t pressed)
         break;
 
         case MODE_BUILDER:
-            //not defined yet
+            // B and C choose how the board is drawn; the third foot is not ours
+            if (pressed)
+                BM_foot_change(foot);
         break;
 
         case MODE_SELFTEST:
@@ -1335,6 +1343,8 @@ void naveg_release_dialog_semaphore(void)
 
 void naveg_trigger_mode_change(uint8_t mode)
 {
+    uint8_t leaving_builder = (g_device_mode == MODE_BUILDER && mode != MODE_BUILDER);
+
     //save to return
     g_prev_device_mode = g_device_mode;
 
@@ -1365,6 +1375,15 @@ void naveg_trigger_mode_change(uint8_t mode)
             //not used
         break;
     }
+
+    /*
+     * Every path out of the builder comes through here, and this is where the host is told.
+     * After the mode has changed, not before: the host answers this and then sends the
+     * addressings back for control mode, and cb_control_add() reads the current mode to
+     * decide where they go.
+     */
+    if (leaving_builder)
+        BM_exit();
 }
 
 void naveg_print_shift_screen(void)
