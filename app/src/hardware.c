@@ -260,10 +260,11 @@ static ledz_t *g_leds[LEDS_COUNT];
 static encoder_t g_encoders[ENCODERS_COUNT];
 static button_t g_footswitches[FOOTSWITCHES_COUNT];
 static button_t g_buttons[BUTTONS_COUNT];
-static uint32_t g_counter, g_overlay_counter;
+static uint32_t g_counter;
+static volatile uint32_t g_overlay_counter;
 static int g_brightness;
-static void (*g_overlay_callback)(void);
-static uint8_t trigger_overlay_callback = 0;
+static void (* volatile g_overlay_callback)(void);
+static volatile uint8_t trigger_overlay_callback = 0;
 static uint8_t g_overlay_type;
 
 /*
@@ -904,6 +905,8 @@ void hardware_coreboard_power(uint8_t state)
 
 void hardware_set_overlay_timeout(uint32_t overlay_time_in_ms, void (*timeout_cb), uint8_t type)
 {
+    // drop any callback already triggered by TIMER2 but not yet run by TIMER3
+    trigger_overlay_callback = 0;
     g_overlay_callback = timeout_cb;
     g_overlay_type = type;
 
@@ -914,6 +917,7 @@ void hardware_set_overlay_timeout(uint32_t overlay_time_in_ms, void (*timeout_cb
 void hardware_force_overlay_off(uint8_t avoid_callback)
 {
     g_overlay_counter = 0;
+    trigger_overlay_callback = 0;
 
     if (g_overlay_callback && !avoid_callback) {
         g_overlay_callback();
@@ -1007,8 +1011,12 @@ void TIMER3_IRQHandler(void)
     {
         if (trigger_overlay_callback)
         {
-            g_overlay_callback();
+            // the callback may have been cleared by hardware_force_overlay_off()
+            void (*cb)(void) = g_overlay_callback;
             trigger_overlay_callback = 0;
+
+            if (cb)
+                cb();
         }
     }
 
