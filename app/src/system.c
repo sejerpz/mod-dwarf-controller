@@ -4,6 +4,7 @@
 ************************************************************************************************************************
 */
 
+#include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
@@ -482,6 +483,201 @@ void system_bluetooth_cb(void *arg, int event)
             sys_comm_wait_response();
         }
     }
+}
+
+/*
+ * WIFI page: state read from "wifi-ap status" (dwarf-ap project), one line:
+ *   on <ip> <ssid>
+ *   off <ip|none> <ap|noap> [<last error>]
+ *   starting | stopping
+ *   error <reason>
+ */
+enum {WIFI_UNKNOWN, WIFI_NO_DEVICE, WIFI_OFF, WIFI_ON, WIFI_STARTING, WIFI_STOPPING};
+static uint8_t g_wifi_state = WIFI_UNKNOWN;
+static uint8_t g_wifi_ap_supported = 0;
+// list values are shown on 2 lines of max 9 chars, split at the first space
+static char g_wifi_ip_text[20];
+static char g_wifi_status_text[20];
+
+// "192.168.0.151" -> "192.168. 0.151" (2 lines)
+static void wifi_set_ip_text(const char *ip)
+{
+    const char *dot = strchr(ip, '.');
+    if (dot)
+        dot = strchr(dot + 1, '.');
+
+    if (dot && (dot - ip) < 9 && strlen(dot + 1) <= 9)
+    {
+        uint8_t len = dot - ip + 1;
+        memcpy(g_wifi_ip_text, ip, len);
+        g_wifi_ip_text[len] = ' ';
+        strcpy(&g_wifi_ip_text[len + 1], dot + 1);
+    }
+    else
+    {
+        strncpy(g_wifi_ip_text, ip, 9);
+        g_wifi_ip_text[9] = '\0';
+    }
+}
+
+static void wifi_set_ap_text(menu_item_t *item)
+{
+    if (!g_wifi_ap_supported)
+        item->data.unit_text = "N/A";
+    else
+        item->data.unit_text = ((int)item->data.value == 1) ? "ON" : "OFF";
+}
+
+static void wifi_read_status(void)
+{
+    char status[LINE_BUFFER_SIZE + 1] = {};
+
+    // the response buffer is reused by the next cli command: copy it
+    const char *response = cli_command("wifi-ap status", CLI_RETRIEVE_RESPONSE);
+    if (response)
+        strncpy(status, response, sizeof(status) - 1);
+
+    // split "<word> <arg1> <arg2> <arg3>"
+    char *args[3] = {};
+    char *p = status;
+    uint8_t i;
+    for (i = 0; i < 3; i++)
+    {
+        p = strchr(p, ' ');
+        if (!p)
+            break;
+        *p++ = '\0';
+        args[i] = p;
+    }
+
+    if (strcmp(status, "on") == 0 && args[0])
+    {
+        g_wifi_state = WIFI_ON;
+        g_wifi_ap_supported = 1;
+        wifi_set_ip_text(args[0]);
+        // "ON <ssid>", ssid on the second line
+        strcpy(g_wifi_status_text, "ON ");
+        strncat(g_wifi_status_text, args[1] ? args[1] : "", 9);
+    }
+    else if (strcmp(status, "off") == 0 && args[0])
+    {
+        g_wifi_state = WIFI_OFF;
+        g_wifi_ap_supported = (args[1] && strcmp(args[1], "ap") == 0);
+
+        if (strcmp(args[0], "none") == 0)
+            strcpy(g_wifi_ip_text, "NOT CONNECTED");
+        else
+            wifi_set_ip_text(args[0]);
+
+        if (!g_wifi_ap_supported)
+            strcpy(g_wifi_status_text, "NOT SUPPORTED");
+        else if (args[2])
+            strcpy(g_wifi_status_text, "FAILED");
+        else
+            strcpy(g_wifi_status_text, "OFF");
+    }
+    else if (strcmp(status, "starting") == 0 || strcmp(status, "stopping") == 0)
+    {
+        g_wifi_state = (status[2] == 'a') ? WIFI_STARTING : WIFI_STOPPING;
+        strcpy(g_wifi_ip_text, "-");
+        strcpy(g_wifi_status_text, (g_wifi_state == WIFI_STARTING) ? "STARTING" : "STOPPING");
+    }
+    else if (strcmp(status, "error") == 0 && args[0] && strcmp(args[0], "no-wifi-device") == 0)
+    {
+        g_wifi_state = WIFI_NO_DEVICE;
+        g_wifi_ap_supported = 0;
+        strcpy(g_wifi_ip_text, "NO DEVICE");
+        strcpy(g_wifi_status_text, "NO WIFI");
+    }
+    else
+    {
+        // no answer, or wifi-ap not installed
+        g_wifi_state = WIFI_UNKNOWN;
+        g_wifi_ap_supported = 0;
+        strcpy(g_wifi_ip_text, "N/A");
+        strcpy(g_wifi_status_text, "N/A");
+    }
+
+    menu_item_t *item = TM_get_menu_item_by_ID(WIFI_IP_ID);
+    if (item)
+        item->data.unit_text = g_wifi_ip_text;
+
+    item = TM_get_menu_item_by_ID(WIFI_AP_STATUS_ID);
+    if (item)
+        item->data.unit_text = g_wifi_status_text;
+
+    item = TM_get_menu_item_by_ID(WIFI_AP_ID);
+    if (item && !item->data.popup_active)
+    {
+        // keep the value chosen with the encoder while waiting for the click
+        uint8_t pending = ((int)item->data.value != item->data.selected);
+
+        item->data.selected = (g_wifi_state == WIFI_ON || g_wifi_state == WIFI_STARTING) ? 1 : 0;
+        if (!pending || !g_wifi_ap_supported)
+            item->data.value = item->data.selected;
+
+        wifi_set_ap_text(item);
+    }
+}
+
+// WIFI page: refreshed periodically while it is on screen (need_update)
+void system_wifi_cb(void *arg, int event)
+{
+    (void) arg;
+
+    if (event == MENU_EV_NONE)
+        wifi_read_status();
+}
+
+// first item of the page, its refresh reads the state for the whole page
+void system_wifi_ip_cb(void *arg, int event)
+{
+    (void) arg;
+
+    if (event == MENU_EV_NONE)
+        wifi_read_status();
+}
+
+void system_wifi_ap_cb(void *arg, int event)
+{
+    menu_item_t *item = arg;
+
+    item->data.min = 0;
+    item->data.max = 1;
+    item->data.step = 1;
+    item->data.list_count = 2;
+
+    //clicked and OK selected in the pop-up: switch the access point
+    if ((event == MENU_EV_ENTER) && (item->data.hover == 0))
+    {
+        if ((int)item->data.value != item->data.selected)
+        {
+            // runs in background, the page shows STARTING/STOPPING
+            cli_command(((int)item->data.value == 1) ? "wifi-ap on -b" : "wifi-ap off -b",
+                        CLI_RETRIEVE_RESPONSE);
+            item->data.selected = item->data.value;
+            wifi_read_status();
+        }
+    }
+    //cancel, reset widget
+    else if (event == MENU_EV_ENTER)
+    {
+        item->data.value = item->data.selected;
+    }
+
+    if (item->data.popup_active)
+        return;
+
+    // can't switch while busy or without AP support
+    uint8_t can_switch = g_wifi_ap_supported &&
+                         (g_wifi_state == WIFI_ON || g_wifi_state == WIFI_OFF);
+
+    if (can_switch && (event == MENU_EV_UP) && (item->data.value < item->data.max))
+        item->data.value++;
+    else if (can_switch && (event == MENU_EV_DOWN) && (item->data.value > item->data.min))
+        item->data.value--;
+
+    wifi_set_ap_text(item);
 }
 
 void system_info_cb(void *arg, int event)

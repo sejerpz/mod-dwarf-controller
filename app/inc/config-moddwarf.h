@@ -192,6 +192,9 @@ enum {ENCODER0, ENCODER1, ENCODER2, FOOTSWITCH0, FOOTSWITCH1, FOOTSWITCH2, BUTTO
 // defines how much time wait for console response (in milliseconds)
 #define CLI_RESPONSE_TIMEOUT        200
 
+// refresh period of the menu items with need_update (ms)
+#define MENU_UPDATE_INTERVAL        1000
+
 //// Tools configuration
 // which display will show which tool
 #define DISPLAY_TOOL_SYSTEM         0
@@ -222,16 +225,17 @@ enum {ENCODER0, ENCODER1, ENCODER2, FOOTSWITCH0, FOOTSWITCH1, FOOTSWITCH2, BUTTO
 #define DISPLAY_SETTINGS    (9 * 10)
 #define SYSTEM_SET_ID       (10 * 10)
 #define BLUETOOTH_ID        (11 * 10)
-#define INFO_ID             (12 * 10)
-#define SERVICES_ID         (13 * 10)
-#define VERSIONS_ID         (14 * 10)
-#define DEVICE_ID           (15 * 10)
-#define UPDATE_ID           (16 * 10)
-#define TEMPO_ID            (17 * 10)
-#define TUNER_ID            (18 * 10)
-#define SHIFT_ITEMS_ID      (19 * 10)
-#define APPEARANCE_SET_ID   (20 * 10)
-#define CONTROLLER_SET_ID   (21 * 10)
+#define WIFI_ID             (12 * 10)
+#define INFO_ID             (13 * 10)
+#define SERVICES_ID         (14 * 10)
+#define VERSIONS_ID         (15 * 10)
+#define DEVICE_ID           (16 * 10)
+#define UPDATE_ID           (17 * 10)
+#define TEMPO_ID            (18 * 10)
+#define TUNER_ID            (19 * 10)
+#define SHIFT_ITEMS_ID      (20 * 10)
+#define APPEARANCE_SET_ID   (21 * 10)
+#define CONTROLLER_SET_ID   (22 * 10)
 
 #define INP_STEREO_LINK         AUDIO_INP_ID+1
 #define INP_1_GAIN_ID           AUDIO_INP_ID+2
@@ -289,6 +293,10 @@ enum {ENCODER0, ENCODER1, ENCODER2, FOOTSWITCH0, FOOTSWITCH1, FOOTSWITCH2, BUTTO
 #define SHIFT_ITEM_2_ID         SHIFT_ITEMS_ID+2
 #define SHIFT_ITEM_3_ID         SHIFT_ITEMS_ID+3
 
+#define WIFI_IP_ID              WIFI_ID+1
+#define WIFI_AP_ID              WIFI_ID+2
+#define WIFI_AP_STATUS_ID       WIFI_ID+3
+
 #define DIALOG_ID           230
 
 #define SYSTEM_MENU     \
@@ -339,6 +347,10 @@ enum {ENCODER0, ENCODER1, ENCODER2, FOOTSWITCH0, FOOTSWITCH1, FOOTSWITCH2, BUTTO
     {"ITEM 1",                          MENU_LIST,      SHIFT_ITEM_1_ID,        SHIFT_ITEMS_ID,     system_shift_item_cb        , 0},  \
     {"ITEM 2",                          MENU_LIST,      SHIFT_ITEM_2_ID,        SHIFT_ITEMS_ID,     system_shift_item_cb        , 0},  \
     {"ITEM 3",                          MENU_LIST,      SHIFT_ITEM_3_ID,        SHIFT_ITEMS_ID,     system_shift_item_cb        , 0},  \
+    {"WIFI",                            MENU_MAIN,      WIFI_ID,                ROOT_ID,            system_wifi_cb              , 1},  \
+    {"WIFI IP",                         MENU_LIST,      WIFI_IP_ID,             WIFI_ID,            system_wifi_ip_cb           , 0},  \
+    {"ACCESS POINT",                    MENU_CLICK_LIST,WIFI_AP_ID,             WIFI_ID,            system_wifi_ap_cb           , 0},  \
+    {"AP STATUS",                       MENU_LIST,      WIFI_AP_STATUS_ID,      WIFI_ID,            NULL                        , 0},  \
     {"BlUETOOTH",                       MENU_CONFIRM,   BLUETOOTH_ID,           ROOT_ID,            system_bluetooth_cb         , 1},  \
     {"INFO",                            MENU_OK,        INFO_ID,                ROOT_ID,            system_info_cb              , 0},  \
     {"SYSTEM UPGRADE",                  MENU_CONFIRM,   UPDATE_ID,              ROOT_ID,            system_upgrade_cb           , 0},  \
@@ -360,6 +372,7 @@ enum {ENCODER0, ENCODER1, ENCODER2, FOOTSWITCH0, FOOTSWITCH1, FOOTSWITCH2, BUTTO
     {USB_MODE_ID, "Change USB mode", "\n\nChanging USB modes requires a device reboot\n\nreboot now?"},  \
     {NOSIE_REMOVAL_ID, "Gndloop compensation", "THIS SETTING REDUCES THE\nAMOUNT OF NOISE INTRODUCED\nBY GROUND LOOPS\n\nENABLING IT SLIGHTLY REDUCES\nTHE AMOUNT OF AVAILABLE CPU\nPOWER"},  \
     {BLUETOOTH_ID, "Enable Bluetooth", "\nEnable Bluetooth discovery\nmode for 2 minutes?"},  \
+    {WIFI_AP_ID, "WiFi access point", "\nThe WiFi connection drops for\na few seconds while the\naccess point is switched.\n\nswitch it now?"},  \
     {INFO_ID, "Device Info", "\nCurrent Release:\n"},  \
     {UPDATE_ID, "Start System Upgrade", "\n\nTo start the system upgrade\nprocess, press and hold down\nfootswitch A and select ok."}, \
 

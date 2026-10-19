@@ -566,6 +566,25 @@ void TM_update_menu(void)
 {
     if (g_update_cb)
     {
+        menu_item_t *item = g_update_data;
+
+        //only while the item is on screen: a page (MENU_MAIN) is left with
+        //back / prev / next, which don't stop the updates
+        //TODO: cleaner to call TM_stop_update_menu() in those paths of TM_enter()
+        if (!tool_is_on(TOOL_MENU) || (item != g_current_item))
+            return;
+
+        if (item->desc->type == MENU_MAIN)
+        {
+            //don't run the callback while a popup of the page is open
+            if (g_menu_popup_active)
+                return;
+
+            (*g_update_cb)(g_update_data, MENU_EV_NONE);
+            screen_menu_page(g_current_menu);
+            return;
+        }
+
         (*g_update_cb)(g_update_data, MENU_EV_NONE);
         screen_system_menu(g_update_data);
     }
