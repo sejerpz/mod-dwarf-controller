@@ -1147,6 +1147,10 @@ void naveg_button_pressed(uint8_t button)
                     
                     if (!g_self_test_mode)
                         ledz_off(hardware_leds(6), WHITE);
+
+                    //back to control mode: the mod LED shows the access point again
+                    if (g_device_mode == MODE_CONTROL)
+                        CM_set_wifi_led();
                 break;
 
                 //TODO enter builder mode

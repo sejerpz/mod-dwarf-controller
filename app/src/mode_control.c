@@ -28,6 +28,7 @@
 #include "sys_comm.h"
 #include "mode_control.h"
 #include "mode_tools.h"
+#include "system.h"
 
 
 //reset actuator queue
@@ -1995,6 +1996,37 @@ void CM_set_leds(void)
     //footswitch actuators
     CM_set_foot_led(g_foots[0], 1);
     CM_set_foot_led(g_foots[1], 1);
+
+    CM_set_wifi_led();
+}
+
+//mod button LED: blue while the WiFi access point is on, otherwise not used in control mode
+void CM_set_wifi_led(void)
+{
+    if (g_self_test_mode)
+        return;
+
+    ledz_t *led = hardware_leds(6);
+    ledz_off(led, WHITE);
+
+    if (system_wifi_ap_on())
+    {
+        ledz_on(led, BLUE);
+        ledz_brightness(led, BLUE, 100);
+    }
+}
+
+//access point switched on/off outside the WIFI page (system_wifi_check)
+void CM_update_wifi_indicator(void)
+{
+    if (naveg_get_current_mode() != MODE_CONTROL)
+        return;
+
+    CM_set_wifi_led();
+
+    //the title is drawn again when the overlay closes
+    if (!hardware_get_overlay_counter())
+        screen_tittle(-1);
 }
 
 void CM_print_screen(void)

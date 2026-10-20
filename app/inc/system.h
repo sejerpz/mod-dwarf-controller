@@ -64,6 +64,8 @@ void system_bluetooth_cb(void *arg, int event);
 void system_wifi_cb(void *arg, int event);
 void system_wifi_ip_cb(void *arg, int event);
 void system_wifi_ap_cb(void *arg, int event);
+uint8_t system_wifi_ap_on(void);
+void system_wifi_check(void);
 void system_info_cb(void *arg, int event);
 void system_upgrade_cb(void *arg, int event);
 void system_inp_0_volume_cb(void *arg, int event);

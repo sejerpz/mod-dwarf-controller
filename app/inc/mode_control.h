@@ -77,6 +77,8 @@ void CM_set_state(void);
 void CM_set_foot_led(control_t *control, uint8_t update_led);
 void CM_close_overlay(void);
 void CM_set_leds(void);
+void CM_set_wifi_led(void);
+void CM_update_wifi_indicator(void);
 void CM_print_control_overlay(control_t *control, uint16_t overlay_time);
 void CM_set_pages_available(uint8_t page_toggles[8]);
 void CM_reset_encoder_page(void);

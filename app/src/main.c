@@ -30,6 +30,7 @@
 #include "mode_navigation.h"
 #include "mode_builder.h"
 #include "mode_tools.h"
+#include "system.h"
 #include "LPC177x_8x.h"
 #include "memory_map.h"
 
@@ -294,6 +295,9 @@ static void displays_task(void *pvParameters)
         {
             last_menu_update = xTaskGetTickCount();
         }
+
+        //access point state outside the WIFI page (title icon, mod LED)
+        system_wifi_check();
 
         taskYIELD();
     }

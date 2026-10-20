@@ -9,6 +9,9 @@
 #include <stdlib.h>
 #include <math.h>
 
+#include "FreeRTOS.h"
+#include "task.h"
+
 #include "system.h"
 #include "config.h"
 #include "data.h"
@@ -486,7 +489,7 @@ void system_bluetooth_cb(void *arg, int event)
 }
 
 /*
- * WIFI page: state read from "wifi-ap status" (dwarf-ap project), one line:
+ * WIFI page: state read from "wifi-ap status" (dwarf-wifi project), one line:
  *   on <ip> <ssid>
  *   off <ip|none> <ap|noap> [<last error>]
  *   starting | stopping
@@ -618,6 +621,9 @@ static void wifi_read_status(void)
 
         wifi_set_ap_text(item);
     }
+
+    // follows the access point while the page is on screen
+    TM_set_wifi_led();
 }
 
 // WIFI page: refreshed periodically while it is on screen (need_update)
@@ -678,6 +684,59 @@ void system_wifi_ap_cb(void *arg, int event)
         item->data.value--;
 
     wifi_set_ap_text(item);
+}
+
+// access point on: icon in the title bar, blue mod LED in control mode
+uint8_t system_wifi_ap_on(void)
+{
+    return (g_wifi_state == WIFI_ON);
+}
+
+/*
+ * State outside the WIFI page: read when leaving the tool menu and, while the
+ * access point is starting or stopping, every WIFI_CHECK_INTERVAL. The access
+ * point is switched only from the WIFI page and is off at boot.
+ * Called by the displays task only, the one that refreshes the WIFI page too:
+ * the cli has a single response buffer.
+ */
+#define WIFI_CHECK_INTERVAL 2000
+
+void system_wifi_check(void)
+{
+    static uint8_t last_mode = MODE_CONTROL;
+    static uint8_t pending = 0;
+    static portTickType last_check = 0;
+
+    uint8_t mode = naveg_get_current_mode();
+
+    // the shift menu is on the way out of the tool menu (MENU button)
+    if (mode != MODE_SHIFT)
+    {
+        if (last_mode == MODE_TOOL_MENU && mode != MODE_TOOL_MENU)
+            pending = 1;
+        last_mode = mode;
+    }
+
+    // the WIFI page reads the state by itself
+    if (TM_need_update_menu())
+        return;
+
+    if ((g_wifi_state == WIFI_STARTING || g_wifi_state == WIFI_STOPPING) &&
+        (xTaskGetTickCount() - last_check) >= (WIFI_CHECK_INTERVAL / portTICK_RATE_MS))
+        pending = 1;
+
+    // nothing must be typed on the login prompt
+    if (!pending || !g_device_booted || cli_restore(RESTORE_STATUS) != LOGGED_ON_SYSTEM)
+        return;
+
+    pending = 0;
+    last_check = xTaskGetTickCount();
+
+    uint8_t was_on = system_wifi_ap_on();
+    wifi_read_status();
+
+    if (system_wifi_ap_on() != was_on)
+        CM_update_wifi_indicator();
 }
 
 void system_info_cb(void *arg, int event)

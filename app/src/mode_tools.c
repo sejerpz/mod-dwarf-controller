@@ -27,6 +27,7 @@
 #include "sys_comm.h"
 #include "mode_tools.h"
 #include "images.h"
+#include "mode_control.h"
 
 /*
 ************************************************************************************************************************
@@ -562,31 +563,48 @@ void TM_set_first_foot_tool(uint8_t tool)
     g_first_foot_tool = TOOL_FOOT + tool;
 }
 
+//the item being updated is still the one on screen, on the same page
+static uint8_t update_on_screen(menu_item_t *item, node_t *page)
+{
+    return (naveg_get_current_mode() == MODE_TOOL_MENU) && tool_is_on(TOOL_MENU) &&
+           (item == g_current_item) && (page == g_current_menu) &&
+           !((item->desc->type == MENU_MAIN) && g_menu_popup_active);
+}
+
 void TM_update_menu(void)
 {
     if (g_update_cb)
     {
         menu_item_t *item = g_update_data;
+        node_t *page = g_current_menu;
 
-        //only while the item is on screen: a page (MENU_MAIN) is left with
-        //back / prev / next, which don't stop the updates
-        //TODO: cleaner to call TM_stop_update_menu() in those paths of TM_enter()
-        if (!tool_is_on(TOOL_MENU) || (item != g_current_item))
-            return;
-
-        if (item->desc->type == MENU_MAIN)
+        //the tool menu was left (shift menu, MENU button, popups, footswitches):
+        //the tool stays on and the item current, stop here or the page would be
+        //drawn on the other screens
+        if (naveg_get_current_mode() != MODE_TOOL_MENU)
         {
-            //don't run the callback while a popup of the page is open
-            if (g_menu_popup_active)
-                return;
-
-            (*g_update_cb)(g_update_data, MENU_EV_NONE);
-            screen_menu_page(g_current_menu);
+            TM_stop_update_menu();
             return;
         }
 
-        (*g_update_cb)(g_update_data, MENU_EV_NONE);
-        screen_system_menu(g_update_data);
+        //only while the item is on screen: a page (MENU_MAIN) is left with
+        //back / prev / next, which don't stop the updates; and not while a
+        //popup of the page is open
+        //TODO: cleaner to call TM_stop_update_menu() in those paths of TM_enter()
+        if (!update_on_screen(item, page))
+            return;
+
+        (*g_update_cb)(item, MENU_EV_NONE);
+
+        //the callback can wait for the cli (WIFI page, ~100 ms): the buttons,
+        //handled by a higher priority task, can change the menu meanwhile
+        if (!update_on_screen(item, page))
+            return;
+
+        if (item->desc->type == MENU_MAIN)
+            screen_menu_page(page);
+        else
+            screen_system_menu(item);
     }
 }
 
@@ -1128,9 +1146,22 @@ void TM_print_tool(void)
     }
 }
 
+//WIFI page: the mod LED shows the access point, as in control mode
+void TM_set_wifi_led(void)
+{
+    if ((naveg_get_current_mode() != MODE_TOOL_MENU) || !tool_is_on(TOOL_MENU) || g_menu_popup_active)
+        return;
+
+    menu_item_t *page = g_current_menu ? g_current_menu->data : NULL;
+    if (page && page->desc && (page->desc->id == WIFI_ID))
+        CM_set_wifi_led();
+}
+
 void TM_set_leds(void)
 {
     naveg_turn_off_leds();
+
+    TM_set_wifi_led();
 
     led_state_t led_state = {};
     ledz_t *led;

@@ -15,6 +15,7 @@
 #include "protocol.h"
 #include "mode_tools.h"
 #include "mode_navigation.h"
+#include "system.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -893,6 +894,16 @@ void screen_footer(uint8_t foot_id, const char *name, const char *value, int16_t
     
 }
 
+// top right corner of the title bar: glider and, while the WiFi access point is on, its icon
+// (its last column is on the empty first columns of the glider)
+static void title_icons(glcd_t *display)
+{
+    icon_custom_firmware(display, DISPLAY_WIDTH - 10, 1);
+
+    if (system_wifi_ap_on())
+        icon_access_point(display, DISPLAY_WIDTH - 19, 1);
+}
+
 void screen_tittle(int8_t pb_ss)
 {
     glcd_t *display = hardware_glcds(0);
@@ -919,7 +930,7 @@ void screen_tittle(int8_t pb_ss)
     else
         icon_pedalboard(display, ((DISPLAY_WIDTH / 2) - (3*name_len) + 7) - 11, 1);
 
-    icon_custom_firmware(display, DISPLAY_WIDTH - 10, 1);
+    title_icons(display);
     //invert the top bar
     glcd_rect_invert(display, 0, 0, DISPLAY_WIDTH, 9);
 }
@@ -1526,7 +1537,7 @@ void screen_shift_overlay(int8_t prev_mode, int16_t *item_ids, uint8_t ui_connec
     title.align = ALIGN_CENTER_TOP;
     widget_textbox(display, &title);
 
-    icon_custom_firmware(display, DISPLAY_WIDTH - 10, 1);
+    title_icons(display);
     //invert the title area
     glcd_rect_invert(display, 0, 0, DISPLAY_WIDTH, 9);
 
@@ -2756,7 +2767,7 @@ void screen_plugin_edit(plugin_edit_t *model)
     }
 
     icon_plugin(display, ((DISPLAY_WIDTH / 2) - (3*title_len) + 7) - 11, 1);
-    icon_custom_firmware(display, DISPLAY_WIDTH - 10, 1);
+    title_icons(display);
 
     //invert the top bar
     glcd_rect_invert(display, 0, 0, DISPLAY_WIDTH, 9);
