@@ -2016,7 +2016,7 @@ void CM_set_wifi_led(void)
     }
 }
 
-//access point switched on/off outside the WIFI page (system_wifi_check)
+//access point or client connection changed outside the WIFI page (system_wifi_check)
 void CM_update_wifi_indicator(void)
 {
     if (naveg_get_current_mode() != MODE_CONTROL)

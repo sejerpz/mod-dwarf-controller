@@ -489,7 +489,7 @@ void system_bluetooth_cb(void *arg, int event)
 }
 
 /*
- * WIFI page: state read from "wifi-ap status" (dwarf-wifi project), one line:
+ * WIFI page: state read from "wifi-ap status" (alabs-mod-wifi project), one line:
  *   on <ip> <ssid>
  *   off <ip|none> <ap|noap> [<last error>]
  *   starting | stopping
@@ -498,6 +498,10 @@ void system_bluetooth_cb(void *arg, int event)
 enum {WIFI_UNKNOWN, WIFI_NO_DEVICE, WIFI_OFF, WIFI_ON, WIFI_STARTING, WIFI_STOPPING};
 static uint8_t g_wifi_state = WIFI_UNKNOWN;
 static uint8_t g_wifi_ap_supported = 0;
+// icon in the title bar (WIFI_ICON_*), kept while the access point is starting / stopping
+static uint8_t g_wifi_icon = WIFI_ICON_NONE;
+// set by the protocol task at the end of a pedalboard load, read by the displays task
+static volatile uint8_t g_wifi_check_requested = 0;
 // list values are shown on 2 lines of max 9 chars, split at the first space
 static char g_wifi_ip_text[20];
 static char g_wifi_status_text[20];
@@ -601,6 +605,13 @@ static void wifi_read_status(void)
         strcpy(g_wifi_status_text, "N/A");
     }
 
+    if (g_wifi_state == WIFI_ON)
+        g_wifi_icon = WIFI_ICON_AP;
+    else if (g_wifi_state == WIFI_OFF)
+        g_wifi_icon = (strcmp(args[0], "none") == 0) ? WIFI_ICON_DISCONNECTED : WIFI_ICON_CONNECTED;
+    else if (g_wifi_state == WIFI_NO_DEVICE || g_wifi_state == WIFI_UNKNOWN)
+        g_wifi_icon = WIFI_ICON_NONE;
+
     menu_item_t *item = TM_get_menu_item_by_ID(WIFI_IP_ID);
     if (item)
         item->data.unit_text = g_wifi_ip_text;
@@ -686,16 +697,30 @@ void system_wifi_ap_cb(void *arg, int event)
     wifi_set_ap_text(item);
 }
 
-// access point on: icon in the title bar, blue mod LED in control mode
+// access point on: blue mod LED in control mode
 uint8_t system_wifi_ap_on(void)
 {
     return (g_wifi_state == WIFI_ON);
 }
 
+// icon in the title bar: access point, client connected / not connected, none
+uint8_t system_wifi_icon(void)
+{
+    return g_wifi_icon;
+}
+
+// end of a pedalboard load (protocol task): the displays task reads the state
+void system_wifi_request_check(void)
+{
+    g_wifi_check_requested = 1;
+}
+
 /*
- * State outside the WIFI page: read when leaving the tool menu and, while the
- * access point is starting or stopping, every WIFI_CHECK_INTERVAL. The access
- * point is switched only from the WIFI page and is off at boot.
+ * State outside the WIFI page: read when leaving the tool menu, at the end of a
+ * pedalboard load (also the one at boot) and, while the access point is starting
+ * or stopping, every WIFI_CHECK_INTERVAL. No polling otherwise: the access point
+ * is switched only from the WIFI page, a change of the client connection is seen
+ * at the next of those events.
  * Called by the displays task only, the one that refreshes the WIFI page too:
  * the cli has a single response buffer.
  */
@@ -717,6 +742,12 @@ void system_wifi_check(void)
         last_mode = mode;
     }
 
+    if (g_wifi_check_requested)
+    {
+        g_wifi_check_requested = 0;
+        pending = 1;
+    }
+
     // the WIFI page reads the state by itself
     if (TM_need_update_menu())
         return;
@@ -733,9 +764,10 @@ void system_wifi_check(void)
     last_check = xTaskGetTickCount();
 
     uint8_t was_on = system_wifi_ap_on();
+    uint8_t was_icon = system_wifi_icon();
     wifi_read_status();
 
-    if (system_wifi_ap_on() != was_on)
+    if ((system_wifi_ap_on() != was_on) || (system_wifi_icon() != was_icon))
         CM_update_wifi_indicator();
 }
 

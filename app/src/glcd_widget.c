@@ -1490,38 +1490,55 @@ void icon_custom_firmware(glcd_t *display, uint8_t x, uint8_t y)
     glcd_set_pixel(display, x + 7, y + 5, GLCD_BLACK);
 }
 
-void icon_access_point(glcd_t *display, uint8_t x, uint8_t y)
+// 7x5 symbol in a box, drawn before the title bar is inverted: on screen a black
+// symbol on a white box, the bar row above and below stays black; the first and
+// last column are black, to cut a long pedalboard name. "AP":
+//     12345678901
+//    1.*********.
+//    2.**.**..**.
+//    3.*.*.*.*.*.
+//    4.*...*..**.
+//    5.*.*.*.***.
+//    6.*.*.*.***.
+//    7.*********.
+// symbol: 7 columns, bit 0 on top
+static void icon_title_badge(glcd_t *display, uint8_t x, uint8_t y, const uint8_t symbol[7])
 {
-    // "AP" in a box, drawn before the title bar is inverted: on screen black
-    // letters on a white box (*), the bar row above and below stays black;
-    // the first and last column are black, to cut a long pedalboard name
-    //     12345678901
-    //    1.*********.
-    //    2.**.**..**.
-    //    3.*.*.*.*.*.
-    //    4.*...*..**.
-    //    5.*.*.*.***.
-    //    6.*.*.*.***.
-    //    7.*********.
-
-    // font 3x5 columns, bit 0 on top: A, P
-    static const uint8_t letters[2][3] = {{0x1E, 0x05, 0x1E}, {0x1F, 0x05, 0x02}};
-
     glcd_rect_fill(display, x, y, 11, 7, GLCD_WHITE);
     glcd_rect_fill(display, x + 1, y, 9, 7, GLCD_BLACK);
 
-    uint8_t l, col, row;
-    for (l = 0; l < 2; l++)
+    uint8_t col, row;
+    for (col = 0; col < 7; col++)
     {
-        for (col = 0; col < 3; col++)
+        for (row = 0; row < 5; row++)
         {
-            for (row = 0; row < 5; row++)
-            {
-                if (letters[l][col] & (1 << row))
-                    glcd_set_pixel(display, x + 2 + (l * 4) + col, y + 1 + row, GLCD_WHITE);
-            }
+            if (symbol[col] & (1 << row))
+                glcd_set_pixel(display, x + 2 + col, y + 1 + row, GLCD_WHITE);
         }
     }
+}
+
+// access point on: "AP" (font 3x5)
+void icon_access_point(glcd_t *display, uint8_t x, uint8_t y)
+{
+    static const uint8_t symbol[7] = {0x1E, 0x05, 0x1E, 0x00, 0x1F, 0x05, 0x02};
+    icon_title_badge(display, x, y, symbol);
+}
+
+// WiFi client: the waves, with an "x" instead of the dot when not connected
+//      connected   not connected
+//      .*****.     .*****.
+//      *.....*     *.....*
+//      ..***..     ..*.*..
+//      .*...*.     ...*...
+//      ...*...     ..*.*..
+void icon_wifi(glcd_t *display, uint8_t x, uint8_t y, uint8_t connected)
+{
+    static const uint8_t symbols[2][7] = {
+        {0x02, 0x01, 0x15, 0x09, 0x15, 0x01, 0x02},
+        {0x02, 0x09, 0x05, 0x15, 0x05, 0x09, 0x02},
+    };
+    icon_title_badge(display, x, y, symbols[connected ? 1 : 0]);
 }
 
 void icon_pedalboard(glcd_t *display, uint8_t x, uint8_t y)

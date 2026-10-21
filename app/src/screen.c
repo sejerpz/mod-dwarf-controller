@@ -894,14 +894,23 @@ void screen_footer(uint8_t foot_id, const char *name, const char *value, int16_t
     
 }
 
-// top right corner of the title bar: glider and, while the WiFi access point is on, its icon
-// (its last column is on the empty first columns of the glider)
+// top right corner of the title bar: glider and the WiFi state, when there is an
+// adapter (the icon's last column is on the empty first columns of the glider)
 static void title_icons(glcd_t *display)
 {
     icon_custom_firmware(display, DISPLAY_WIDTH - 10, 1);
 
-    if (system_wifi_ap_on())
-        icon_access_point(display, DISPLAY_WIDTH - 19, 1);
+    switch (system_wifi_icon())
+    {
+        case WIFI_ICON_AP:
+            icon_access_point(display, DISPLAY_WIDTH - 19, 1);
+        break;
+
+        case WIFI_ICON_CONNECTED:
+        case WIFI_ICON_DISCONNECTED:
+            icon_wifi(display, DISPLAY_WIDTH - 19, 1, system_wifi_icon() == WIFI_ICON_CONNECTED);
+        break;
+    }
 }
 
 void screen_tittle(int8_t pb_ss)

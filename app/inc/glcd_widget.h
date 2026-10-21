@@ -179,6 +179,7 @@ void icon_pb_checkbox(glcd_t *display, uint8_t x, uint8_t y, uint8_t selected);
 void icon_keyboard_invert(glcd_t *display, uint8_t char_index);
 void icon_custom_firmware(glcd_t *display, uint8_t x, uint8_t y);
 void icon_access_point(glcd_t *display, uint8_t x, uint8_t y);
+void icon_wifi(glcd_t *display, uint8_t x, uint8_t y, uint8_t connected);
 
 /*
 ************************************************************************************************************************
