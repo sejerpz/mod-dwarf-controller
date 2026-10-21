@@ -651,6 +651,27 @@ void plugin_map_draw(glcd_t *display, const plugin_map_t *map)
     plugin_map_draw_graph(display, map);
 }
 
+// How far into a hardware box its point cuts. Keep in step with HW_POINT in mod-ui's
+// plugin_map.py: the display list carries a box's width, never its shape.
+#define HW_POINT 5
+
+// The columns a node covers on one of its rows, first and last inclusive. A plugin is a
+// plain box and covers all of them. A hardware terminal is drawn pointed on the side its
+// cable leaves by, tapering at 45 degrees to a tip on the middle row -- which is the row
+// the stub sits on, so the cable runs into the point instead of alongside it.
+static void node_row_span(const glcd_rect_t *rect, uint8_t kind, int16_t row,
+                          int16_t *left, int16_t *right)
+{
+    int16_t mid = (rect->height - 1) / 2;
+    int16_t taper = (row > mid) ? (row - mid) : (mid - row);
+
+    *left = rect->x;
+    *right = rect->x + rect->width - 1;
+
+    if (kind == BM_HW_SOURCE) *right -= taper;
+    else if (kind == BM_HW_SINK) *left += taper;
+}
+
 static void plugin_map_draw_graph(glcd_t *display, const plugin_map_t *map)
 {
     uint8_t i, j;
@@ -715,23 +736,69 @@ static void plugin_map_draw_graph(glcd_t *display, const plugin_map_t *map)
         rect.width = node->rect.width;
         rect.height = node->rect.height;
 
+        uint8_t pointed = (node->kind == BM_HW_SOURCE || node->kind == BM_HW_SINK);
+        int16_t row, left, right;
+        glcd_rect_t strip;
+
+        strip.height = 1;
+
         // clear the interior so cables do not run through the label
-        glcd_rect_fill_clip(display, &clip, &rect, GLCD_WHITE);
+        if (pointed)
+        {
+            for (row = 0; row < rect.height; row++)
+            {
+                node_row_span(&rect, node->kind, row, &left, &right);
+                strip.x = left;
+                strip.y = rect.y + row;
+                strip.width = right - left + 1;
+                glcd_rect_fill_clip(display, &clip, &strip, GLCD_WHITE);
+            }
+        }
+        else
+        {
+            glcd_rect_fill_clip(display, &clip, &rect, GLCD_WHITE);
+        }
 
         // Centring the label belongs here now that glcd_text_clip() takes coordinates like
-        // glcd_text() does, rather than a node.
+        // glcd_text() does, rather than a node. A pointed box centres it on the straight
+        // part, so the point does not pull the label off centre.
         if (node->label[0] != 0 && node->label[0] != '-')
         {
             int16_t text_width = glcd_text_width(Terminal3x5, node->label);
+            int16_t slot_x = rect.x + (node->kind == BM_HW_SINK ? HW_POINT : 0);
+            int16_t slot_w = pointed ? rect.width - HW_POINT : rect.width;
 
             glcd_text_clip(display, &clip,
-                           rect.x + ((rect.width - text_width) / 2),
+                           slot_x + ((slot_w - text_width) / 2),
                            rect.y + ((rect.height - Terminal3x5_HEIGHT) / 2),
                            node->label, Terminal3x5, GLCD_BLACK);
         }
 
-        // a bypassed plugin gets a dashed border; there is no colour to spare on a 1-bit panel
-        glcd_rect_clip(display, &clip, &rect, node->bypassed ? &DASH_BYPASS : 0, GLCD_BLACK);
+        if (pointed)
+        {
+            // the two sloping sides, then the flat top and bottom of the straight part
+            for (row = 0; row < rect.height; row++)
+            {
+                node_row_span(&rect, node->kind, row, &left, &right);
+                glcd_set_pixel_clip(display, &clip, left, rect.y + row, GLCD_BLACK);
+                glcd_set_pixel_clip(display, &clip, right, rect.y + row, GLCD_BLACK);
+            }
+
+            for (j = 0; j < 2; j++)
+            {
+                row = j ? (int16_t)(rect.height - 1) : 0;
+                node_row_span(&rect, node->kind, row, &left, &right);
+                strip.x = left;
+                strip.y = rect.y + row;
+                strip.width = right - left + 1;
+                glcd_rect_fill_clip(display, &clip, &strip, GLCD_BLACK);
+            }
+        }
+        else
+        {
+            // a bypassed plugin gets a dashed border; there is no colour to spare on a 1-bit panel
+            glcd_rect_clip(display, &clip, &rect, node->bypassed ? &DASH_BYPASS : 0, GLCD_BLACK);
+        }
     }
 
     // port stubs, drawn after the boxes so they sit on the border
@@ -751,12 +818,25 @@ static void plugin_map_draw_graph(glcd_t *display, const plugin_map_t *map)
     {
         const plugin_map_node_t *node = &map->nodes[map->selected];
 
+        int16_t row, left, right;
+        glcd_rect_t strip;
+
         rect.x = node->rect.x + dx;
         rect.y = node->rect.y + dy;
         rect.width = node->rect.width;
         rect.height = node->rect.height;
 
-        glcd_rect_invert_clip(display, &clip, &rect);
+        // row by row, following the outline, so the corners a pointed box does not
+        // occupy are left as background instead of flashing on with it
+        strip.height = 1;
+        for (row = 0; row < rect.height; row++)
+        {
+            node_row_span(&rect, node->kind, row, &left, &right);
+            strip.x = left;
+            strip.y = rect.y + row;
+            strip.width = right - left + 1;
+            glcd_rect_invert_clip(display, &clip, &strip);
+        }
     }
 }
 
