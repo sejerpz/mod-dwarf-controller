@@ -1101,6 +1101,9 @@ void cb_pedalboard_load_end(uint8_t serial_id, proto_t *proto)
     // nothing to undo yet; the pair exists so that what is put up at the begin has an end
     protocol_send_response(CMD_RESPONSE, 0, proto);
 
+    // a new pedalboard from the device goes on into the builder, now that it is loaded
+    BM_pedalboard_loaded();
+
     // WiFi icon of the title bar: read by the displays task, the cli is not used from here
     system_wifi_request_check();
 }

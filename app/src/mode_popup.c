@@ -15,6 +15,7 @@
 #include "mode_navigation.h"
 #include "mode_control.h"
 #include "mode_popup.h"
+#include "mode_builder.h"
 #include "config.h"
 #include "hardware.h"
 #include "protocol.h"
@@ -65,6 +66,7 @@ static uint8_t g_keyboard_toggled = 0;
 static uint8_t g_keyboard_index = 0;
 static char* g_current_name_input;
 static uint8_t g_post_callback_call = 0;
+static uint8_t g_pb_manage_from_builder = 0;
 
 /*
 ************************************************************************************************************************
@@ -87,6 +89,16 @@ static uint8_t g_post_callback_call = 0;
 static void exit_popup(void)
 {
     naveg_trigger_popup(-1);
+}
+
+//close the popup and edit the current pedalboard
+static void enter_builder(void)
+{
+    //the builder comes back to the pedalboard page on exit, with edit selected
+    g_pb_manage_from_builder = 1;
+
+    naveg_trigger_popup(-1);
+    naveg_trigger_mode_change(MODE_BUILDER);
 }
 
 void catch_ui_response(void *data, menu_item_t *item)
@@ -175,6 +187,10 @@ void catch_ui_response(void *data, menu_item_t *item)
             }
         break;
 
+        case POPUP_NEW_PB_ID:
+            PM_launch_attention_overlay("\n\nUnexpected error when\ncreating pedalboard", exit_popup);
+        break;
+
         case POPUP_OVERWRITE_SS_ID:
             PM_launch_attention_overlay("\n\nUnexpected error when\noverwriting snapshot", exit_popup);
         break;
@@ -258,6 +274,14 @@ void PM_enter(uint8_t encoder)
 {
     hardware_force_overlay_off(1);
 
+    //pedalboard management, encoder 1 click selects the hovered option
+    if (g_current_popup_id == POPUP_PB_MANAGE_ID) {
+        if (encoder == 0)
+            PM_button_pressed(0);
+
+        return;
+    }
+
     //check if naming
     if (g_global_popups[g_current_popup_id].has_naming_input) {
         switch (encoder)
@@ -296,6 +320,16 @@ void PM_enter(uint8_t encoder)
 void PM_up(uint8_t encoder)
 {
     hardware_force_overlay_off(1);
+
+    //pedalboard management, encoder 1 moves the option hover
+    if (g_current_popup_id == POPUP_PB_MANAGE_ID) {
+        if ((encoder == 0) && (g_global_popups[g_current_popup_id].cursor_index > 0)) {
+            g_global_popups[g_current_popup_id].cursor_index--;
+            PM_print_screen();
+        }
+
+        return;
+    }
 
     //check if naming
     if (g_global_popups[g_current_popup_id].has_naming_input) {
@@ -349,6 +383,16 @@ void PM_up(uint8_t encoder)
 void PM_down(uint8_t encoder)
 {
     hardware_force_overlay_off(1);
+
+    //pedalboard management, encoder 1 moves the option hover
+    if (g_current_popup_id == POPUP_PB_MANAGE_ID) {
+        if ((encoder == 0) && (g_global_popups[g_current_popup_id].cursor_index < PB_MANAGE_ITEMS_COUNT - 1)) {
+            g_global_popups[g_current_popup_id].cursor_index++;
+            PM_print_screen();
+        }
+
+        return;
+    }
 
     //check if naming
     if (g_global_popups[g_current_popup_id].has_naming_input) {
@@ -441,24 +485,6 @@ void PM_set_leds(void)
 
     switch (g_current_popup_id)
     {
-        case POPUP_SAVE_SELECT_ID:
-            //pb
-            led = hardware_leds(3);
-            led_state.color = TRIGGER_COLOR;
-            set_ledz_trigger_by_color_id(led, LED_ON, led_state);
-            //ss
-            led = hardware_leds(4);
-            set_ledz_trigger_by_color_id(led, LED_ON, led_state);
-            //cancel
-            led_state.color = TOGGLED_COLOR;
-            led = hardware_leds(5);
-            set_ledz_trigger_by_color_id(led, LED_ON, led_state);
-
-            led_state.color = ENUMERATED_COLOR;
-            led = hardware_leds(6);
-            set_ledz_trigger_by_color_id(led, LED_OFF, led_state);
-        break;
-
         case POPUP_NEW_BANK_ID:
         case POPUP_SAVE_SS_ID:
         case POPUP_SAVE_PB_ID:
@@ -475,6 +501,8 @@ void PM_set_leds(void)
             set_ledz_trigger_by_color_id(led, LED_ON, led_state);
         break;
 
+        case POPUP_PB_MANAGE_ID:
+        case POPUP_NEW_PB_ID:
         case POPUP_DUPL_BANK_ID:
         case POPUP_EMPTY_NAME_ID:
         case POPUP_OVERWRITE_SS_ID:
@@ -511,24 +539,43 @@ void PM_button_pressed(uint8_t button)
 
     switch (g_current_popup_id)
     {
-        case POPUP_SAVE_SELECT_ID:
+        case POPUP_PB_MANAGE_ID:
             switch(button)
             {
-                //save pedalboard
+                //select the hovered option
                 case 0:
-                    PM_launch_popup(POPUP_SAVE_PB_ID);
-                break;
+                    //saving is only allowed with the web-ui disconnected
+                    if (((g_global_popups[g_current_popup_id].cursor_index == PB_MANAGE_SAVE_PB)
+                        || (g_global_popups[g_current_popup_id].cursor_index == PB_MANAGE_SAVE_SS)) && naveg_ui_status()) {
+                        PM_launch_attention_overlay("\nPlease disconnect   the Web-ui to save aPedalboard/Snapshot", exit_popup);
+                        return;
+                    }
 
-                //save snapshot
-                case 1:
-                    PM_launch_popup(POPUP_SAVE_SS_ID);
+                    switch (g_global_popups[g_current_popup_id].cursor_index)
+                    {
+                        case PB_MANAGE_EDIT_PB:
+                            enter_builder();
+                        break;
+
+                        case PB_MANAGE_NEW_PB:
+                            PM_launch_popup(POPUP_NEW_PB_ID);
+                        break;
+
+                        case PB_MANAGE_SAVE_PB:
+                            PM_launch_popup(POPUP_SAVE_PB_ID);
+                        break;
+
+                        case PB_MANAGE_SAVE_SS:
+                            PM_launch_popup(POPUP_SAVE_SS_ID);
+                        break;
+                    }
                 break;
 
                 //cancel
                 case 2:
                     naveg_trigger_popup(-1);
                 break;
-            } 
+            }
         break;
 
         case POPUP_SAVE_SS_ID:
@@ -879,7 +926,9 @@ void PM_button_pressed(uint8_t button)
                        i = copy_command(buffer, CMD_PEDALBOARD_SAVE);
                     }
 
-                    buffer[i++] = 0;
+                    // ui_comm_webgui_send() sends the terminator itself, one past the length
+                    // given: counting it here sent a stray byte, glued onto the next message
+                    buffer[i] = 0;
 
                     ui_comm_webgui_send(buffer, i);
                     ui_comm_webgui_wait_response();
@@ -902,6 +951,38 @@ void PM_button_pressed(uint8_t button)
             } 
         break;
 
+        case POPUP_NEW_PB_ID:
+            switch(button)
+            {
+                case 0:
+                    ui_comm_webgui_set_response_cb(catch_ui_response, NULL);
+                    ui_comm_webgui_clear();
+
+                    i = copy_command(buffer, CMD_PEDALBOARD_NEW);
+                    // not counted: ui_comm_webgui_send() sends the terminator itself
+                    buffer[i] = 0;
+
+                    ui_comm_webgui_send(buffer, i);
+                    ui_comm_webgui_wait_response();
+
+                    //mod-ui loads the default pedalboard, and the builder opens on it once the
+                    //load is over: entered now, the start of the load would throw it out again
+                    if (g_post_callback_call)
+                    {
+                        //the builder comes back to the pedalboard page on exit, as from Edit
+                        g_pb_manage_from_builder = 1;
+                        BM_enter_after_load();
+                        naveg_trigger_popup(-1);
+                    }
+                break;
+
+                //cancel
+                case 2:
+                    naveg_trigger_popup(-1);
+                break;
+            }
+        break;
+
         case POPUP_TRAIL_PB_ID:
             if (button == 0)
                 naveg_trigger_popup(-1);
@@ -916,6 +997,11 @@ void PM_launch_popup(uint8_t popup_id)
     g_current_popup_id = popup_id;
     g_keyboard_toggled = 0;
     g_global_popups[g_current_popup_id].button_value = -1;
+
+    if (g_current_popup_id == POPUP_PB_MANAGE_ID) {
+        g_global_popups[g_current_popup_id].cursor_index = g_pb_manage_from_builder ? PB_MANAGE_EDIT_PB : 0;
+        g_pb_manage_from_builder = 0;
+    }
 
     //fetch the needed things
     if (g_global_popups[g_current_popup_id].has_naming_input) {

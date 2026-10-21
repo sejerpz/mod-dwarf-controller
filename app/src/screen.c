@@ -1553,8 +1553,8 @@ void screen_shift_overlay(int8_t prev_mode, int16_t *item_ids, uint8_t ui_connec
     //draw the outlines
     print_menu_outlines();
 
-    //draw the first box, save pb
-    glcd_text(display, 22, DISPLAY_HEIGHT - 7, "SAVE", Terminal3x5, GLCD_BLACK);
+    //draw the first box, pedalboard management
+    glcd_text(display, 26, DISPLAY_HEIGHT - 7, "PB", Terminal3x5, GLCD_BLACK);
 
     //draw the second box, menu/control mode
     glcd_text(display, 50, DISPLAY_HEIGHT - 7, "SETTNGS", Terminal3x5, GLCD_BLACK);
@@ -1562,10 +1562,8 @@ void screen_shift_overlay(int8_t prev_mode, int16_t *item_ids, uint8_t ui_connec
     if (previous_mode == MODE_TOOL_MENU)
         glcd_rect_invert(display, 49, DISPLAY_HEIGHT - 8, 30, 8);
 
-    //draw the third box, menu/builder mode
-    glcd_text(display, 90, DISPLAY_HEIGHT - 7, "EDIT", Terminal3x5, GLCD_BLACK);
-    if (previous_mode == MODE_BUILDER)
-        glcd_rect_invert(display, 83, DISPLAY_HEIGHT - 8, 30, 8);
+    //draw the third box, not used (edit moved to the pedalboard page)
+    glcd_text(display, 96, DISPLAY_HEIGHT - 7, "-", Terminal3x5, GLCD_BLACK);
 
     //print the 3 quick controls
     for (i = 0; i < 3; i++)
@@ -1724,6 +1722,19 @@ void screen_popup(system_popup_t *popup_data)
         //cursor
         glcd_rect(display, 8 + (6*popup_data->cursor_index), 22, 5, 1, GLCD_BLACK);
     }
+    //pedalboard management, list the options and highlight the hovered one
+    else if (popup_data->id == POPUP_PB_MANAGE_ID) {
+        static const char *pb_manage_items[] = PB_MANAGE_ITEMS;
+
+        uint8_t i;
+        for (i = 0; i < PB_MANAGE_ITEMS_COUNT; i++) {
+            uint8_t y = 14 + (i * 9);
+            glcd_text(display, 8, y, pb_manage_items[i], Terminal3x5, GLCD_BLACK);
+
+            if (i == popup_data->cursor_index)
+                glcd_rect_invert(display, 4, y - 2, DISPLAY_WIDTH - 8, 9);
+        }
+    }
     else {
         switch (popup_data->button_value) {
             case 0:
@@ -1842,6 +1853,18 @@ void screen_text_box(uint8_t x, uint8_t y, const char *text)
 }
 
 
+/* a board with no plugins, in the middle of the space the plugins would take */
+static void print_empty_pedalboard(glcd_t *display)
+{
+    static const char first[] = "EMPTY";
+    static const char second[] = "PEDALBOARD";
+
+    glcd_text(display, (DISPLAY_WIDTH - glcd_text_width(Terminal7x8, first)) / 2,
+              DISPLAY_HEIGHT / 2 - 10, first, Terminal7x8, GLCD_BLACK);
+    glcd_text(display, (DISPLAY_WIDTH - glcd_text_width(Terminal7x8, second)) / 2,
+              DISPLAY_HEIGHT / 2, second, Terminal7x8, GLCD_BLACK);
+}
+
 void screen_plugins_list(menu_item_t *item)
 {
     glcd_t *display;
@@ -1897,7 +1920,7 @@ void screen_plugins_list(menu_item_t *item)
     {
         glcd_text(display, 34, DISPLAY_HEIGHT - 7, "-", Terminal3x5, GLCD_BLACK);
 
-        glcd_text(display, DISPLAY_WIDTH / 2 - 32, DISPLAY_HEIGHT / 2 -5, "NO PLUGINS", Terminal7x8, GLCD_BLACK);
+        print_empty_pedalboard(display);
     }
 
     // led handling
@@ -1994,7 +2017,7 @@ void screen_plugin_map(plugin_map_t *map, const plugin_list_t *list, uint8_t loa
     }
     else
     {
-        glcd_text(display, DISPLAY_WIDTH / 2 - 32, DISPLAY_HEIGHT / 2 -5, "NO PLUGINS", Terminal7x8, GLCD_BLACK);
+        print_empty_pedalboard(display);
     }
 
     // led handling

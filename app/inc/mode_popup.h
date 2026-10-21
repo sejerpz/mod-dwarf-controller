@@ -37,11 +37,19 @@
 #define CONFIRM_CANCEL_BTN2     "-"
 #define CONFIRM_CANCEL_BTN3     "cancel"
 
-#define POPUP_SAVE_SELECT_ID    0
-#define POPUP_SAVE_SELECT_MSG   "\n\nWhat would you like to save?"
-#define PBTN1_SAVE_SELECT       "PB"
-#define PBTN2_SAVE_SELECT       "snapsht"
-#define PBTN3_SAVE_SELECT       "cancel"
+#define POPUP_PB_MANAGE_ID      0
+#define POPUP_PB_MANAGE_MSG     ""
+#define PBTN1_PB_MANAGE         "select"
+#define PBTN2_PB_MANAGE         CONFIRM_CANCEL_BTN2
+#define PBTN3_PB_MANAGE         CONFIRM_CANCEL_BTN3
+
+//options of the pedalboard management popup, selected with encoder 1
+#define PB_MANAGE_NEW_PB        0
+#define PB_MANAGE_EDIT_PB       1
+#define PB_MANAGE_SAVE_PB       2
+#define PB_MANAGE_SAVE_SS       3
+#define PB_MANAGE_ITEMS_COUNT   4
+#define PB_MANAGE_ITEMS         {"New pedalboard", "Edit pedalboard", "Save pedalboard", "Save snapshot"}
 
 #define POPUP_SAVE_PB_ID        1
 #define POPUP_SAVE_PB_MSG       NAMING_WIDGET_TXT
@@ -109,9 +117,15 @@
 #define PBTN2_DUPL_BANK      CONFIRM_CANCEL_BTN2
 #define PBTN3_DUPL_BANK      CONFIRM_CANCEL_BTN3
 
+#define POPUP_NEW_PB_ID         12
+#define POPUP_NEW_PB_MSG        "\n\nare you sure you want\nto replace the current\npedalboard with a new one?"
+#define PBTN1_NEW_PB            CONFIRM_CANCEL_BTN1
+#define PBTN2_NEW_PB            CONFIRM_CANCEL_BTN2
+#define PBTN3_NEW_PB            CONFIRM_CANCEL_BTN3
+
     /*ID,                     POPUP TITLE,            POPUP TEXT,              POPUP BUTTON TEXT,                           val, cursor, btns, naming widget, txt input*/
 #define SYSTEM_POPUPS     \
-    {POPUP_SAVE_SELECT_ID   ,"What to save?",         POPUP_SAVE_SELECT_MSG,   PBTN1_SAVE_SELECT,  PBTN2_SAVE_SELECT,  PBTN3_SAVE_SELECT,  0,  0,  3,  0, NULL },  \
+    {POPUP_PB_MANAGE_ID     ,"PEDALBOARD",            POPUP_PB_MANAGE_MSG,     PBTN1_PB_MANAGE,    PBTN2_PB_MANAGE,    PBTN3_PB_MANAGE,    0,  0,  3,  0, NULL },  \
     {POPUP_SAVE_PB_ID       ,"Save pedalboard",       POPUP_SAVE_PB_MSG,       PBTN1_SAVE_PB,      PBTN2_SAVE_PB,      PBTN3_SAVE_PB,      0,  0,  3,  1, NULL },  \
     {POPUP_SAVE_SS_ID       ,"Save snapshot",         POPUP_SAVE_SS_MSG,       PBTN1_SAVE_SS,      PBTN2_SAVE_SS,      PBTN3_SAVE_SS,      0,  0,  3,  1, NULL },  \
     {POPUP_REMOVE_PB_ID     ,"Remove pedalboard",     POPUP_REMOVE_PB_MSG,     PBTN1_REMOVE_PB,    PBTN2_REMOVE_PB,    PBTN3_REMOVE_PB,    0,  0,  2,  0, NULL },  \
@@ -123,6 +137,7 @@
     {POPUP_EMPTY_NAME_ID    ,"Invalid input",         POPUP_EMPTY_NAME_MSG,    PBTN1_EMPTY_NAME,   PBTN2_EMPTY_NAME,   PBTN3_EMPTY_NAME,   0,  0,  2,  0, NULL },  \
     {POPUP_TRAIL_PB_ID      ,"Trial Plugin",          POPUP_TRAIL_PB_MSG,      PBTN1_TRAIL_PB,     PBTN2_TRAIL_PB,     PBTN3_TRAIL_PB,     0,  0,  1,  0, NULL },  \
     {POPUP_DUPL_BANK_ID     ,"Bank Already exists",   POPUP_DUPL_BANK_MSG,     PBTN1_DUPL_BANK,    PBTN2_DUPL_BANK,    PBTN3_DUPL_BANK,    0,  0,  2,  0, NULL },  \
+    {POPUP_NEW_PB_ID        ,"New pedalboard",        POPUP_NEW_PB_MSG,        PBTN1_NEW_PB,       PBTN2_NEW_PB,       PBTN3_NEW_PB,       0,  0,  2,  0, NULL },  \
 /*
 ************************************************************************************************************************
 *           DATA TYPES

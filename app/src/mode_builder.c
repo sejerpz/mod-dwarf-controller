@@ -21,6 +21,7 @@
 #include "screen.h"
 #include "ui_comm.h"
 #include "mode_builder.h"
+#include "mode_popup.h"
 #include "plugin_map.h"
 #include "mode_builder_connmanager.h"
 #include "mode_builder_plugin_manager.h"
@@ -1787,8 +1788,10 @@ void BM_button_pressed(uint8_t button)
             }
             else
             {
-                // this should exit shift mode
+                // leave the builder properly (the host stops watching the board), then go
+                // back to the pedalboard page the builder was entered from
                 naveg_trigger_mode_change(MODE_CONTROL);
+                naveg_trigger_popup(POPUP_PB_MANAGE_ID);
             }
         break;
 
@@ -1926,8 +1929,44 @@ void BM_close_overlay(void)
 
 
 
+/*
+ * New pedalboard, entered once its load is over: 1 while the load runs, 2 once it has
+ * ended. Given up on after a while, so that a load that never reports its end cannot pull
+ * the panel into the builder on some unrelated load later on.
+ */
+#define BM_NEW_PB_TICKS     (15000 * 2)
+
+static volatile uint8_t g_enter_after_load;
+static uint32_t g_enter_after_load_stamp;
+
+void BM_enter_after_load(void)
+{
+    g_enter_after_load_stamp = hardware_timestamp();
+    g_enter_after_load = 1;
+}
+
+void BM_pedalboard_loaded(void)
+{
+    if (g_enter_after_load == 1) g_enter_after_load = 2;
+}
+
 void BM_tick(void)
 {
+    if (g_enter_after_load == 2)
+    {
+        g_enter_after_load = 0;
+
+        // only from control mode: a panel the user has taken elsewhere meanwhile stays there
+        if (naveg_get_current_mode() == MODE_CONTROL)
+            naveg_trigger_mode_change(MODE_BUILDER);
+
+        return;
+    }
+
+    if (g_enter_after_load == 1 &&
+        (hardware_timestamp() - g_enter_after_load_stamp) > BM_NEW_PB_TICKS)
+        g_enter_after_load = 0;
+
     if (naveg_get_current_mode() != MODE_BUILDER) return;
 
     /*
