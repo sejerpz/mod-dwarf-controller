@@ -1382,9 +1382,9 @@ void naveg_trigger_mode_change(uint8_t mode)
 
     /*
      * Every path out of the builder comes through here, and this is where the host is told.
-     * After the mode has changed, not before: the host answers this and then sends the
-     * addressings back for control mode, and cb_control_add() reads the current mode to
-     * decide where they go.
+     * After the mode has changed, not before: BM_exit() then has control mode fetch its page
+     * again when bindings were made in the builder, and cb_control_add() reads the current
+     * mode to decide where those controls go.
      */
     if (leaving_builder)
         BM_exit();

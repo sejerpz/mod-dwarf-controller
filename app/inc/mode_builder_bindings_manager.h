@@ -56,6 +56,11 @@ void BM_bindings_manager_turn(uint8_t encoder, int8_t step);
 // page in the heading, replacing whatever held that slot.
 void BM_bindings_manager_add(void);
 
+// Whether a binding was made or taken off since the last call, and clears it. An addressing
+// made from here reaches this device while the builder owns the controls, so whoever leaves
+// the builder has to have control mode fetch its page again.
+uint8_t BM_bindings_manager_take_changed(void);
+
 // The third button, and only where the slot holds something. The first press arms it and
 // the row starts flashing; the second is the one that takes the binding off.
 void BM_bindings_manager_del(void);

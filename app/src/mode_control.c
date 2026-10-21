@@ -1781,6 +1781,50 @@ void CM_reset_page(void)
     g_current_encoder_page = 0;
 }
 
+/*
+ * The page in use, fetched again without moving off it. CMD_NEXT_PAGE would do it too, but
+ * it puts every knob back on its first sub-page, which is right for a new page and wrong for
+ * the one already on screen. CMD_DWARF_CONTROL_SUBPAGE sets one actuator's sub-page and
+ * sends back what it holds there, so asking each actuator for the sub-page it is already on
+ * reloads it where it stands. The footswitches do not turn over: theirs is always the first.
+ *
+ * Wanted when leaving the builder after a binding: the addressings made there reach this
+ * device while the builder owns the controls, so control mode never got them.
+ */
+void CM_reload_page(void)
+{
+    char buffer[30];
+    uint8_t i, q;
+
+    hardware_force_overlay_off(0);
+    g_current_overlay_actuator = -1;
+
+    CM_reset_momentary_control(0, 0);
+    CM_reset_momentary_control(1, 0);
+
+    for (q = 0; q < TOTAL_CONTROL_ACTUATORS; q++)
+        CM_remove_control(q);
+
+    reset_queue();
+    ui_comm_webgui_clear();
+
+    for (q = 0; q < TOTAL_CONTROL_ACTUATORS; q++)
+    {
+        i = copy_command(buffer, CMD_DWARF_CONTROL_SUBPAGE);
+        i += int_to_str(q, &buffer[i], sizeof(buffer) - i, 0);
+        buffer[i++] = ' ';
+        i += int_to_str((q < ENCODERS_COUNT) ? g_current_encoder_page : 0,
+                        &buffer[i], sizeof(buffer) - i, 0);
+
+        ui_comm_webgui_send(buffer, i);
+        ui_comm_webgui_wait_response();
+    }
+
+    // the builder may be leaving for another mode, which draws its own screen
+    if (naveg_get_current_mode() == MODE_CONTROL)
+        CM_set_state();
+}
+
 void CM_load_next_encoder_page(uint8_t button)
 {
     hardware_force_overlay_off(0);

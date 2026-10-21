@@ -72,6 +72,9 @@ void CM_draw_foot(uint8_t foot_id);
 void CM_load_next_page(void);
 void CM_load_prev_page(void);
 void CM_load_next_encoder_page(uint8_t button);
+// Fetches the controls of the page and sub-page in use again, staying on both. Sends and
+// waits, so never from inside a protocol callback.
+void CM_reload_page(void);
 void CM_print_screen(void);
 void CM_set_state(void);
 void CM_set_foot_led(control_t *control, uint8_t update_led);

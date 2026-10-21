@@ -25,6 +25,7 @@
 #include "mode_builder_connmanager.h"
 #include "mode_builder_plugin_manager.h"
 #include "mode_builder_bindings_manager.h"
+#include "mode_control.h"
 
 /*
 ************************************************************************************************************************
@@ -1501,6 +1502,9 @@ void BM_forget_watch(void)
 {
     g_watching = 0;
     g_plugin_map_stale = 0;
+
+    // the host reloads every addressing itself on both paths, and nothing may be sent here
+    BM_bindings_manager_take_changed();
 }
 
 /*
@@ -1554,6 +1558,14 @@ void BM_exit(void)
 
     g_watching = 0;
     request_change_notify(0);
+
+    /*
+     * A binding made here went to the builder, not to control mode: cb_control_add() hands
+     * a control to whichever mode owns the panel, and the host does not send them again on
+     * the way out. So control mode asks for its page again, now that the mode has changed.
+     */
+    if (BM_bindings_manager_take_changed())
+        CM_reload_page();
 }
 
 

@@ -81,8 +81,22 @@ static int16_t g_act_hover;
 /* which of those already carry an addressing on the page in the heading */
 static uint8_t g_act_taken[BB_MAX_ACTUATORS];
 
+/*
+ * For a group, the rows it is made of, one bit each; zero for everything else. A group and
+ * its own footswitches cannot be held at once -- the web UI's rule -- so a row one of them
+ * blocks is shown in brackets and takes no binding. Worked out here from what is marked,
+ * not read back, for the same reason the marks themselves are.
+ */
+static uint32_t g_act_members[BB_MAX_ACTUATORS];
+
+/* the names as the column draws them: in brackets where a group blocks the row */
+static char g_act_shown[BB_MAX_ACTUATORS][BB_LABEL_SIZE + 2];
+
 /* the slot a bind took the parameter off, since a parameter holds one addressing */
 static int16_t g_freed = BM_NONE;
+
+/* a binding was made or taken off since the builder last handed the controls back */
+static uint8_t g_changed;
 
 /* DEL is armed before it acts, and this is which half of the flash we are on */
 static uint8_t g_armed;
@@ -116,21 +130,59 @@ static void parse_actuators(void *data, menu_item_t *item)
     count = (uint32_t) atoi(list[2]);
 
     /*
-     * One token an entry: its name. Which actuator and which sub-page a row is, is the
-     * host's business -- a knob appears three times over and reads as three places to put
-     * a parameter, which is what it is.
+     * Two tokens an entry: its name, and for a group the rows it is made of ("9,10"), or
+     * "-". Which actuator and which sub-page a row is, is the host's business -- a knob
+     * appears three times over and reads as three places to put a parameter, which is
+     * what it is.
      */
     for (i = 0; i < count && g_act_count < BB_MAX_ACTUATORS; i++)
     {
-        if (!list[3 + i]) break;
+        char **entry = &list[3 + i * 2];
+        const char *member;
 
-        strncpy(g_act_text[g_act_count], list[3 + i], BB_LABEL_SIZE - 1);
+        if (!entry[0] || !entry[1]) break;
+
+        strncpy(g_act_text[g_act_count], entry[0], BB_LABEL_SIZE - 1);
         g_act_text[g_act_count][BB_LABEL_SIZE - 1] = 0;
         plugin_map_unescape(g_act_text[g_act_count]);
+
+        g_act_members[g_act_count] = 0;
+        for (member = entry[1]; *member && *member != '-'; )
+        {
+            int at = atoi(member);
+
+            if (at >= 0 && at < BB_MAX_ACTUATORS) g_act_members[g_act_count] |= (1UL << at);
+
+            while (*member && *member != ',') member++;
+            if (*member == ',') member++;
+        }
 
         g_act_rows[g_act_count] = g_act_text[g_act_count];
         g_act_count++;
     }
+}
+
+/* whether a group stands in the way of binding to this row, on the page in the heading */
+static uint8_t is_blocked(int16_t row)
+{
+    uint8_t i;
+
+    if (row < 0 || row >= (int16_t) g_act_count) return 0;
+
+    // a group, while one of its footswitches holds something
+    if (g_act_members[row])
+    {
+        for (i = 0; i < g_act_count; i++)
+            if ((g_act_members[row] & (1UL << i)) && g_act_taken[i]) return 1;
+
+        return 0;
+    }
+
+    // a footswitch, while a group it belongs to does
+    for (i = 0; i < g_act_count; i++)
+        if ((g_act_members[i] & (1UL << row)) && g_act_taken[i]) return 1;
+
+    return 0;
 }
 
 static void parse_params(void *data, menu_item_t *item)
@@ -433,7 +485,11 @@ void BM_bindings_manager_add(void)
 
     disarm();
 
+    // the host would refuse it too; the brackets on the row say why nothing happens
+    if (is_blocked(g_act_hover)) return;
+
     request_bind(g_param_hover, g_act_hover);
+    g_changed = 1;
 
     /*
      * Marked here rather than read back. The host answers before it starts, because making
@@ -475,10 +531,19 @@ void BM_bindings_manager_del(void)
     }
 
     request_unbind(g_act_hover);
+    g_changed = 1;
     disarm();
 
     // emptied, for the same reason the bind marks rather than reads back
     g_act_taken[g_act_hover] = 0;
+}
+
+uint8_t BM_bindings_manager_take_changed(void)
+{
+    uint8_t changed = g_changed;
+
+    g_changed = 0;
+    return changed;
 }
 
 uint8_t BM_bindings_manager_tick(void)
@@ -494,6 +559,8 @@ uint8_t BM_bindings_manager_tick(void)
 
 void BM_bindings_manager_fill(bindings_t *model)
 {
+    uint8_t i;
+
     model->title = g_title[0] ? g_title : "BINDINGS";
 
     model->params = g_param_rows;
@@ -502,6 +569,24 @@ void BM_bindings_manager_fill(bindings_t *model)
     model->param_hover = g_param_hover - (int16_t) g_param_first;
 
     model->page = g_page_title;
+
+    // the rows a group blocks, in brackets; rebuilt on every draw, since a bind or a DEL
+    // anywhere in a group changes the others
+    for (i = 0; i < g_act_count; i++)
+    {
+        if (is_blocked(i))
+        {
+            g_act_shown[i][0] = '(';
+            strncpy(&g_act_shown[i][1], g_act_text[i], BB_LABEL_SIZE - 1);
+            g_act_shown[i][BB_LABEL_SIZE] = 0;
+            strcat(g_act_shown[i], ")");
+            g_act_rows[i] = g_act_shown[i];
+        }
+        else
+        {
+            g_act_rows[i] = g_act_text[i];
+        }
+    }
 
     model->actuators = g_act_rows;
     model->actuator_count = g_act_count;
