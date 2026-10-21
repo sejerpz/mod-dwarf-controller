@@ -41,6 +41,8 @@ static const glcd_dash_t DASH_BYPASS = { 2, 1 };
 ************************************************************************************************************************
 */
 
+static void build_order(plugin_map_t *map);
+
 // Reads a non-negative or negative decimal integer and advances the cursor past it.
 static int16_t read_int(const char **cursor)
 {
@@ -354,6 +356,14 @@ uint8_t plugin_map_parse(plugin_map_t *map, const char *text)
     }
 
     if (!header_seen) return 0;
+
+    /*
+     * The order indexes into the nodes just replaced. Left as it was, a list on screen
+     * across a refetch -- an edit, a board changed from the web UI -- would read names
+     * off the wrong boxes, or off slots past the end of a smaller window.
+     */
+    if (map->view_mode == PLUGIN_MAP_VIEW_LIST)
+        build_order(map);
 
     // keep the selection pointing at the same plugin across a refetch; fall back to the focus mod-ui
     // used, then to the first node
@@ -747,5 +757,103 @@ static void plugin_map_draw_graph(glcd_t *display, const plugin_map_t *map)
         rect.height = node->rect.height;
 
         glcd_rect_invert_clip(display, &clip, &rect);
+    }
+}
+
+void plugin_list_clear(plugin_list_t *list)
+{
+    if (!list) return;
+
+    list->count = 0;
+    list->first = 0;
+    list->total = 0;
+    list->hover = 0;
+    list->loaded = 0;
+}
+
+const plugin_list_row_t *plugin_list_hovered(const plugin_list_t *list)
+{
+    if (!list || !list->loaded) return 0;
+    if (list->hover < (int16_t) list->first) return 0;
+    if (list->hover >= (int16_t) (list->first + list->count)) return 0;
+
+    return &list->rows[list->hover - list->first];
+}
+
+uint8_t plugin_list_step(plugin_list_t *list, int8_t step)
+{
+    int16_t next;
+
+    if (!list || !list->loaded || list->total == 0) return 0;
+
+    // the two ends of the board; the list does not wrap, like the walk of the picture
+    next = list->hover + step;
+    if (next < 0 || next >= (int16_t) list->total) return 0;
+
+    list->hover = next;
+    return 1;
+}
+
+uint8_t plugin_list_needs_window(const plugin_list_t *list)
+{
+    if (!list || !list->loaded || list->total == 0) return 0;
+
+    if (!plugin_list_hovered(list)) return 1;
+
+    // the panel shows the rows above the cursor too, so the start of the window is an edge
+    // well before the cursor reaches it -- unless there is nothing before it to fetch
+    return list->first > 0 && (list->hover - list->first) < PLUGIN_LIST_MARGIN;
+}
+
+uint16_t plugin_list_window_for(const plugin_list_t *list)
+{
+    int16_t first;
+
+    if (!list) return 0;
+
+    // mod-ui pulls a window that would run off the end back, so only the start is clamped
+    first = list->hover - (PLUGIN_LIST_MAX_ROWS / 2);
+    return (first < 0) ? 0 : (uint16_t) first;
+}
+
+void plugin_list_draw(glcd_t *display, const glcd_rect_t *view, const plugin_list_t *list)
+{
+    const uint8_t pitch = 7;
+    glcd_rect_t clip, row;
+    int16_t visible, top, i;
+
+    if (!display || !view || !list || !list->loaded || list->count == 0) return;
+
+    clip = *view;
+
+    visible = view->height / pitch;
+    if (visible == 0) return;
+
+    /*
+     * Scrolled the way the window list scrolls: the cursor walks down the panel and then
+     * stays on the bottom row. Never above the rows held, should the cursor have outrun
+     * them; plugin_list_needs_window() is there so that it does not.
+     */
+    top = list->hover - visible + 1;
+    if (top < (int16_t) list->first) top = list->first;
+
+    for (i = 0; i < visible; i++)
+    {
+        int16_t at = top + i - list->first;
+        int16_t y = view->y + i * pitch;
+
+        if (at < 0 || at >= list->count) break;
+
+        glcd_text_clip(display, &clip, view->x + 2, y + 1,
+                       list->rows[at].title, Terminal3x5, GLCD_BLACK);
+
+        if (top + i == list->hover)
+        {
+            row.x = view->x;
+            row.y = y;
+            row.width = view->width;
+            row.height = pitch;
+            glcd_rect_invert_clip(display, &clip, &row);
+        }
     }
 }

@@ -1928,12 +1928,23 @@ void screen_plugins_list(menu_item_t *item)
  * button labels -- and the graph is drawn into the gap between them. plugin_map_draw()
  * clips to the viewport mode_builder.c set, so nothing here can spill over the footer.
  */
-void screen_plugin_map(plugin_map_t *map, uint8_t loaded, uint8_t armed, uint8_t blink_reverse)
+void screen_plugin_map(plugin_map_t *map, const plugin_list_t *list, uint8_t loaded,
+                       uint8_t armed, uint8_t blink_reverse)
 {
     glcd_t *display;
     display = hardware_glcds(0);
 
     const plugin_map_node_t *node = loaded ? plugin_map_selected(map) : NULL;
+
+    /*
+     * The list cursor moves without the graph, which catches up only when something needs
+     * the box: until then it is the row, not the graph's selection, that is on screen.
+     */
+    uint8_t from_list = (map->view_mode == PLUGIN_MAP_VIEW_LIST && list && list->loaded);
+    const plugin_list_row_t *row = from_list ? plugin_list_hovered(list) : NULL;
+
+    const char *title = row ? row->title : (node ? node->title : NULL);
+    uint8_t kind = row ? row->kind : (node ? node->kind : 0);
 
     // clear screen
     glcd_clear(display, GLCD_WHITE);
@@ -1946,7 +1957,7 @@ void screen_plugin_map(plugin_map_t *map, uint8_t loaded, uint8_t armed, uint8_t
     title_box.font = Terminal3x5;
     title_box.top_margin = 1;
     title_box.align = ALIGN_CENTER_TOP;
-    title_box.text = (node && node->title[0]) ? node->title : "PEDALBOARD";
+    title_box.text = (title && title[0]) ? title : "PEDALBOARD";
     widget_textbox(display, &title_box);
 
     //invert the title area
@@ -1965,7 +1976,7 @@ void screen_plugin_map(plugin_map_t *map, uint8_t loaded, uint8_t armed, uint8_t
      * box it would remove, the whole button the way print_menu_boxes() draws it, so the two
      * read as one thing about to happen.
      */
-    if (node && node->kind == BM_PLUGIN)
+    if (kind == BM_PLUGIN)
     {
         glcd_text(display, 92, DISPLAY_HEIGHT - 7, "DEL", Terminal3x5, GLCD_BLACK);
 
@@ -1973,7 +1984,11 @@ void screen_plugin_map(plugin_map_t *map, uint8_t loaded, uint8_t armed, uint8_t
             glcd_rect_invert(display, 82, DISPLAY_HEIGHT - 9, 31, 9);
     }
 
-    if (loaded && map->n_nodes > 0)
+    if (from_list && list->total > 0)
+    {
+        plugin_list_draw(display, &map->view, list);
+    }
+    else if (!from_list && loaded && map->n_nodes > 0)
     {
         plugin_map_draw(display, map);
     }
@@ -2287,7 +2302,7 @@ static void draw_offset_column(glcd_t *display, uint8_t x, uint8_t width, uint8_
  * it on the picture beats picking it off a list of names that says nothing about where it
  * sits -- and the list mode is there for when the name is what you know.
  */
-void screen_connection_pick(plugin_map_t *map, const char *title)
+void screen_connection_pick(plugin_map_t *map, const plugin_list_t *list, const char *title)
 {
     glcd_t *display;
     display = hardware_glcds(0);
@@ -2312,7 +2327,10 @@ void screen_connection_pick(plugin_map_t *map, const char *title)
     // the same gesture as every other step of building a connection
     glcd_text(display, 52, DISPLAY_HEIGHT - 7, "SELECT", Terminal3x5, GLCD_BLACK);
 
-    plugin_map_draw(display, map);
+    if (map->view_mode == PLUGIN_MAP_VIEW_LIST && list && list->loaded)
+        plugin_list_draw(display, &map->view, list);
+    else
+        plugin_map_draw(display, map);
 
     for (uint8_t i = 0; i < FOOTSWITCHES_COUNT; i++)
         ledz_off(hardware_leds(i), WHITE);

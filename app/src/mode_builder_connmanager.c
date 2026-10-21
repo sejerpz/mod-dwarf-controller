@@ -107,6 +107,8 @@ static uint8_t g_pick_list;
 
 /* the graph the popup sits on; borrowed from mode_builder for as long as it is open */
 static plugin_map_t *g_map;
+/* ... and its list, which the picker fills with the destinations while it is choosing */
+static plugin_list_t *g_list;
 static uint8_t g_open;
 
 /*
@@ -530,6 +532,9 @@ static void release_picker(void)
 {
     int8_t index;
 
+    // the list was the destinations, not the board; mode_builder fetches its own again
+    if (g_list) plugin_list_clear(g_list);
+
     plugin_map_set_selectable(g_map, NULL, 0);
     plugin_map_set_view_mode(g_map, PLUGIN_MAP_VIEW_GRAPH);
 
@@ -537,6 +542,70 @@ static void release_picker(void)
     BM_refresh_graph(g_ours);
 
     index = plugin_map_index_of(g_map, g_ours);
+    if (index != BM_NONE) plugin_map_select(g_map, index);
+}
+
+/*
+ * The destinations as the list view shows them. mod-ui sends every box on the board that
+ * could take the cable, already in alphabetical order, so the list needs no window of its
+ * own -- the graph's window would end the list at the edge of it on a big board.
+ */
+static void fill_pick_list(void)
+{
+    uint8_t i;
+
+    if (!g_list) return;
+
+    plugin_list_clear(g_list);
+
+    for (i = 0; i < g_connection_count && g_list->count < PLUGIN_LIST_MAX_ROWS; i++)
+    {
+        plugin_list_row_t *row = &g_list->rows[g_list->count];
+        const char *label = g_connections[i].label;
+        uint8_t length;
+
+        row->id = g_connections[i].node;
+        row->kind = (row->id >= 0) ? BM_PLUGIN : (g_own_is_output ? BM_HW_SINK : BM_HW_SOURCE);
+
+        // the name without the arrow parse_connections() put on it, as the picture names it
+        if (label[0] == '>' && label[1] == ' ') label += 2;
+        strncpy(row->title, label, PLUGIN_MAP_TITLE_SIZE - 1);
+        row->title[PLUGIN_MAP_TITLE_SIZE - 1] = 0;
+
+        length = strlen(row->title);
+        if (length >= 2 && row->title[length - 2] == ' ' && row->title[length - 1] == '>')
+            row->title[length - 2] = 0;
+
+        g_list->count++;
+    }
+
+    g_list->total = g_list->count;
+    g_list->loaded = 1;
+}
+
+/*
+ * The graph follows the list cursor when the picker goes back to the picture, fetching the
+ * window around the box when it is not in this one.
+ */
+static void pick_select_in_map(int16_t id)
+{
+    int16_t ids[BM_MAX_CONNECTIONS];
+    int8_t index;
+    uint8_t i;
+
+    index = plugin_map_index_of(g_map, id);
+
+    if (index == BM_NONE)
+    {
+        for (i = 0; i < g_connection_count; i++) ids[i] = g_connections[i].node;
+
+        BM_refresh_graph(id);
+        plugin_map_set_selectable(g_map, ids, g_connection_count);
+        plugin_map_set_view_mode(g_map, g_pick_list ? PLUGIN_MAP_VIEW_LIST : PLUGIN_MAP_VIEW_GRAPH);
+
+        index = plugin_map_index_of(g_map, id);
+    }
+
     if (index != BM_NONE) plugin_map_select(g_map, index);
 }
 
@@ -554,6 +623,7 @@ static void enter_targets(void)
 
 
     request_menu(g_ours);
+    fill_pick_list();
 
 
     for (i = 0; i < g_connection_count; i++)
@@ -593,6 +663,13 @@ static void picker_move(int8_t step)
     int16_t target;
     int8_t index;
 
+    // the list holds every destination, so walking it fetches nothing
+    if (g_pick_list && g_list && g_list->loaded)
+    {
+        plugin_list_step(g_list, step);
+        return;
+    }
+
     if (!node) return;
 
     index = plugin_map_index_of(g_map, node->id);
@@ -627,13 +704,24 @@ static void picker_move(int8_t step)
 static void picker_click(void)
 {
     const plugin_map_node_t *node = plugin_map_selected(g_map);
+    const plugin_list_row_t *row = NULL;
+    int16_t id;
+    const char *title;
 
-    if (!node) return;
+    if (g_pick_list && g_list && g_list->loaded)
+    {
+        row = plugin_list_hovered(g_list);
+        if (!row) return;
+    }
+    else if (!node) return;
 
-    g_target.node = node->id;
+    id = row ? row->id : node->id;
+    title = row ? row->title : node->title;
+
+    g_target.node = id;
     g_target.type = g_own_bits;
     g_target.direction = g_own_is_output ? BM_PORT_OUT : BM_PORT_IN;
-    strncpy(g_target.label, node->title, BM_CONN_LABEL_SIZE - 1);
+    strncpy(g_target.label, title, BM_CONN_LABEL_SIZE - 1);
     g_target.label[BM_CONN_LABEL_SIZE - 1] = 0;
 
     release_picker();
@@ -811,16 +899,18 @@ static void connection_delete(void)
 void BM_conn_manager_init(void)
 {
     g_map = NULL;
+    g_list = NULL;
     g_open = 0;
     g_filter = BM_AUDIO;
     connection_disarm();
 }
 
-void BM_conn_manager_open(plugin_map_t *map)
+void BM_conn_manager_open(plugin_map_t *map, plugin_list_t *list)
 {
     if (!map) return;
 
     g_map = map;
+    g_list = list;
 
     if (selected_node_id() == BM_NONE) return;
 
@@ -885,6 +975,25 @@ void BM_conn_manager_view(uint8_t list)
 {
     // only while choosing a destination; elsewhere the picture is not what is on screen
     if (!g_open || g_menu_mode != MENU_TARGETS) return;
+
+    // the cursor stays on the same box across the switch, whichever way
+    if (list && !g_pick_list && g_list && g_list->loaded)
+    {
+        const plugin_map_node_t *node = plugin_map_selected(g_map);
+        uint8_t i;
+
+        for (i = 0; node && i < g_list->count; i++)
+        {
+            if (g_list->rows[i].id == node->id) g_list->hover = i;
+        }
+    }
+    else if (!list && g_pick_list && g_list)
+    {
+        const plugin_list_row_t *row = plugin_list_hovered(g_list);
+
+        g_pick_list = 0;
+        if (row) pick_select_in_map(row->id);
+    }
 
     g_pick_list = list;
     plugin_map_set_view_mode(g_map, list ? PLUGIN_MAP_VIEW_LIST : PLUGIN_MAP_VIEW_GRAPH);

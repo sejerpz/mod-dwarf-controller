@@ -94,6 +94,16 @@ static bool g_list_click = 0;
  */
 static plugin_map_t g_plugin_map;
 static uint8_t g_plugin_map_loaded = 0;
+
+/*
+ * The list view, which is every plugin on the board by name rather than the graph's window
+ * sorted: on a big board the window ends after twenty-odd boxes and the list ended with it.
+ * The hardware boxes have nothing to open, bypass or delete, so mod-ui leaves them out. Lent
+ * to the connection picker for its own list of destinations while one is being chosen.
+ */
+static plugin_list_t g_plugin_list;
+/* where the box a list request was centred on sits in the whole list, or BM_NONE */
+static int16_t g_list_position = BM_NONE;
 /* the selected plugin's instance id as text, for CMD_BUILDER_CONTROL_LIST */
 static char g_selected_uid[12];
 
@@ -140,6 +150,8 @@ static void encoder_control_rm(uint8_t hw_id);
 static void reset_list_encoders(void);
 static void clone_list_encoders(control_t *control);
 static void request_plugin_map(int16_t focus_id, uint8_t initial);
+static void list_reload(int16_t focus_id);
+static uint8_t list_sync(void);
 static void request_control_page(control_t *control, uint8_t dir);
 static void send_control_set(control_t *control);
 
@@ -443,6 +455,164 @@ static void request_plugin_map(int16_t focus_id, uint8_t initial)
 }
 
 /*
+ * Pedalboard list view
+ */
+
+static void parse_plugin_list(void *data, menu_item_t *item)
+{
+    (void) item;
+    char **list = data;
+    uint32_t i, count;
+
+    g_plugin_list.count = 0;
+    g_plugin_list.loaded = 0;
+    g_list_position = BM_NONE;
+
+    // an error, or a host from before the list had a command of its own: the list view
+    // falls back on the graph's window
+    if (!list || !list[0] || !list[1] || atoi(list[1]) == -1) return;
+    if (!list[2] || !list[3] || !list[4] || !list[5]) return;
+
+    g_plugin_list.total = (uint16_t) atoi(list[2]);
+    g_plugin_list.first = (uint16_t) atoi(list[3]);
+    g_list_position = (int16_t) atoi(list[4]);
+    count = (uint32_t) atoi(list[5]);
+
+    for (i = 0; i < count && g_plugin_list.count < PLUGIN_LIST_MAX_ROWS; i++)
+    {
+        char **entry = &list[6 + i * 3];
+        plugin_list_row_t *row = &g_plugin_list.rows[g_plugin_list.count];
+
+        if (!entry[0] || !entry[1] || !entry[2]) break;
+
+        row->id = (int16_t) atoi(entry[0]);
+        row->kind = (uint8_t) entry[1][0];
+        strncpy(row->title, entry[2], PLUGIN_MAP_TITLE_SIZE - 1);
+        row->title[PLUGIN_MAP_TITLE_SIZE - 1] = 0;
+        plugin_map_unescape(row->title);
+
+        g_plugin_list.count++;
+    }
+
+    g_plugin_list.loaded = 1;
+}
+
+/*
+ * ask for the rows of the list view from <first>, or centred on <focus_id> when <first>
+ * is negative
+ */
+static void request_plugin_list(int16_t first, int16_t focus_id)
+{
+    uint8_t i;
+    char buffer[32];
+    memset(buffer, 0, sizeof buffer);
+
+    ui_comm_webgui_set_response_cb(parse_plugin_list, NULL);
+    ui_comm_webgui_clear_tx_buffer();
+
+    // response: "r 1 40 0 3 48 -1 i IN1 7 p AUTOPAN ..."
+    i = copy_command((char *)buffer, CMD_BUILDER_PLUGIN_LIST);
+    i += int_to_str(first, &buffer[i], sizeof(buffer) - i, 0);
+    buffer[i++] = ' ';
+    i += int_to_str(focus_id, &buffer[i], sizeof(buffer) - i, 0);
+    buffer[i++] = 0;
+
+    ui_comm_webgui_send(buffer, i);
+    ui_comm_webgui_wait_response();
+}
+
+static uint8_t list_active(void)
+{
+    return g_plugin_map.view_mode == PLUGIN_MAP_VIEW_LIST && g_plugin_list.loaded;
+}
+
+/*
+ * Slides the window when the cursor has walked off it. The board can change between two
+ * windows, so the cursor is pulled back inside a list that got shorter meanwhile.
+ */
+static void list_follow(void)
+{
+    if (!plugin_list_needs_window(&g_plugin_list)) return;
+
+    request_plugin_list((int16_t) plugin_list_window_for(&g_plugin_list), BM_NONE);
+
+    if (g_plugin_list.total > 0 && g_plugin_list.hover >= (int16_t) g_plugin_list.total)
+        g_plugin_list.hover = g_plugin_list.total - 1;
+}
+
+/*
+ * Fetches the list with the cursor on <focus_id>. A box that is not on the board any more
+ * -- the one just deleted -- leaves the cursor where it was, which is now the name after it.
+ */
+static void list_reload(int16_t focus_id)
+{
+    int16_t hover = g_plugin_list.hover;
+
+    request_plugin_list(-1, focus_id);
+    if (!g_plugin_list.loaded) return;
+
+    if (g_list_position >= 0)
+    {
+        g_plugin_list.hover = g_list_position;
+        return;
+    }
+
+    if (hover >= (int16_t) g_plugin_list.total) hover = g_plugin_list.total - 1;
+    if (hover < 0) hover = 0;
+    g_plugin_list.hover = hover;
+
+    list_follow();
+}
+
+/*
+ * One row along the list. Nothing is fetched for the graph: the next name is rarely in the
+ * same window of it, and a refetch per step of the encoder would make the list crawl.
+ */
+static void list_move(uint8_t direction)
+{
+    if (!plugin_list_step(&g_plugin_list, (direction == PLUGIN_MAP_NEXT) ? 1 : -1)) return;
+
+    list_follow();
+    BM_print_screen();
+}
+
+/*
+ * The graph's selection catches up with the list cursor, fetching the window around the
+ * box when it is not in the one in hand. Called before anything acts on the selected box.
+ * Returns 0 when the box under the cursor could not be selected -- the board changed under
+ * the list -- and then nothing should act at all: whatever the graph has selected is not
+ * the name on screen.
+ */
+static uint8_t list_sync(void)
+{
+    const plugin_list_row_t *row;
+    const plugin_map_node_t *node;
+    int8_t index;
+
+    if (!list_active()) return 1;
+
+    row = plugin_list_hovered(&g_plugin_list);
+    if (!row) return 0;
+
+    node = plugin_map_selected(&g_plugin_map);
+    if (node && node->id == row->id) return 1;
+
+    index = plugin_map_index_of(&g_plugin_map, row->id);
+
+    if (index == BM_NONE)
+    {
+        request_plugin_map(row->id, 0);
+        if (!g_plugin_map_loaded) return 0;
+
+        index = plugin_map_index_of(&g_plugin_map, row->id);
+        if (index == BM_NONE) return 0;
+    }
+
+    plugin_map_select(&g_plugin_map, index);
+    return 1;
+}
+
+/*
  * The connection menu of the selected box.
  */
 
@@ -533,7 +703,7 @@ static void plugin_map_toggle_bypass(void)
 static void plugin_map_delete_plugin(void)
 {
     const plugin_map_node_t *node = plugin_map_selected(&g_plugin_map);
-    int16_t landing;
+    int16_t landing, removed;
 
     // the capture and playback boxes are drawn like the rest but are not on the board
     if (!node || node->kind != BM_PLUGIN)
@@ -552,11 +722,16 @@ static void plugin_map_delete_plugin(void)
 
     // somewhere to stand once the box under the cursor is gone
     landing = (node->next != BM_NONE) ? node->next : node->prev;
+    removed = node->id;
 
-    request_remove(node->id);
+    request_remove(removed);
     del_disarm();
 
     BM_refresh_graph(landing);
+
+    // in the list the name after it takes its row, which is where the cursor already is
+    if (g_plugin_map.view_mode == PLUGIN_MAP_VIEW_LIST)
+        list_reload(removed);
 }
 
 static void plugin_map_add_plugin(void)
@@ -1224,6 +1399,7 @@ void BM_init(void)
     BM_bindings_manager_init();
     BM_plugin_manager_init();
     plugin_map_init(&g_plugin_map);
+    plugin_list_clear(&g_plugin_list);
     plugin_map_set_view(&g_plugin_map, PLUGIN_MAP_VIEW_X, PLUGIN_MAP_VIEW_Y, PLUGIN_MAP_VIEW_W, PLUGIN_MAP_VIEW_H);
 }
 
@@ -1251,7 +1427,24 @@ void BM_foot_change(uint8_t foot)
      * the panel while they are up.
      */
     if (uiState == PLUGIN_SELECT)
-        plugin_map_set_view_mode(&g_plugin_map, list ? PLUGIN_MAP_VIEW_LIST : PLUGIN_MAP_VIEW_GRAPH);
+    {
+        del_disarm();
+
+        if (list)
+        {
+            // opened on the box the graph is standing on, wherever it sits in the list
+            const plugin_map_node_t *node = plugin_map_selected(&g_plugin_map);
+
+            plugin_map_set_view_mode(&g_plugin_map, PLUGIN_MAP_VIEW_LIST);
+            list_reload(node ? node->id : BM_NONE);
+        }
+        else
+        {
+            // ... and the graph opens on the name the list was on
+            list_sync();
+            plugin_map_set_view_mode(&g_plugin_map, PLUGIN_MAP_VIEW_GRAPH);
+        }
+    }
     else if (uiState == CONNECTIONS && BM_conn_manager_is_picking())
         BM_conn_manager_view(list);
     else
@@ -1320,6 +1513,13 @@ void BM_enter(void)
     del_disarm();
     g_plugin_map_stale = 0;
     request_plugin_map(BM_NONE, 1);
+
+    // the view is kept across visits; a list left behind is stale, or the picker's
+    if (g_plugin_map.view_mode == PLUGIN_MAP_VIEW_LIST)
+    {
+        const plugin_map_node_t *node = plugin_map_selected(&g_plugin_map);
+        list_reload(node ? node->id : BM_NONE);
+    }
 
     // ... and only now, so the host takes note of the board we have just fetched
     request_change_notify(1);
@@ -1392,6 +1592,12 @@ void BM_encoder_click(uint8_t encoder)
     if (uiState == PLUGIN_SELECT) {
         del_disarm();
 
+        // both clicks act on the box, so the graph has to be standing on it first
+        if (!list_sync()) {
+            BM_print_screen();
+            return;
+        }
+
         // opening a plugin is the first encoder's click; there is no button for it
         if (encoder == 0) {
             const plugin_map_node_t *node = plugin_map_selected(&g_plugin_map);
@@ -1443,8 +1649,10 @@ void BM_up(uint8_t encoder)
         // an armed DEL is about the box under the cursor, so moving off it disarms
         del_disarm();
 
-        if (encoder == 0)
-            plugin_map_move(PLUGIN_MAP_PREV);
+        if (encoder == 0) {
+            if (list_active()) list_move(PLUGIN_MAP_PREV);
+            else plugin_map_move(PLUGIN_MAP_PREV);
+        }
         /*
          * The second encoder opens the popup one way and closes it the other: turning it
          * right opens, turning it left off the first row closes. Turning left here, with
@@ -1483,16 +1691,20 @@ void BM_down(uint8_t encoder)
     if (uiState == PLUGIN_SELECT) {
         del_disarm();
 
-        if (encoder == 0)
-            plugin_map_move(PLUGIN_MAP_NEXT);
+        if (encoder == 0) {
+            if (list_active()) list_move(PLUGIN_MAP_NEXT);
+            else plugin_map_move(PLUGIN_MAP_NEXT);
+        }
         else if (encoder == 1) {
             // rightwards only; leftwards is what closes it
-            BM_conn_manager_open(&g_plugin_map);
+            if (!list_sync()) return;
+            BM_conn_manager_open(&g_plugin_map, &g_plugin_list);
             if (BM_conn_manager_is_open()) uiState = CONNECTIONS;
             BM_print_screen();
         }
         else if (encoder == 2) {
             // the bindings screen has three columns of its own, so BACK is what leaves it
+            if (!list_sync()) return;
             BM_bindings_manager_open(&g_plugin_map);
             if (BM_bindings_manager_is_open()) uiState = BINDINGS;
             BM_print_screen();
@@ -1577,7 +1789,10 @@ void BM_button_pressed(uint8_t button)
                     uiState = PLUGIN_SELECT;
 
                     // land on what was just added, so it is there to wire up
-                    if (added != BM_NONE) request_plugin_map(added, 0);
+                    if (added != BM_NONE) {
+                        request_plugin_map(added, 0);
+                        if (g_plugin_map.view_mode == PLUGIN_MAP_VIEW_LIST) list_reload(added);
+                    }
                 }
 
                 BM_print_screen();
@@ -1601,14 +1816,19 @@ void BM_button_pressed(uint8_t button)
             }
             else
             {
-                plugin_map_add_plugin();
+                // the box the cursor is on is the hint for where the new one goes; an
+                // empty list has no box to be on, and adding is all there is to do there
+                if (list_sync() || (list_active() && g_plugin_list.total == 0))
+                    plugin_map_add_plugin();
+                else BM_print_screen();
             }
         break;
         
         case 2:
             if (uiState == PLUGIN_SELECT)
             {
-                plugin_map_delete_plugin();
+                if (list_sync()) plugin_map_delete_plugin();
+                else del_disarm();
                 BM_print_screen();
             }
             else if (uiState == ADD_PLUGIN)
@@ -1706,12 +1926,15 @@ void BM_tick(void)
     if (g_plugin_map_stale && uiState == PLUGIN_SELECT)
     {
         const plugin_map_node_t *node = plugin_map_selected(&g_plugin_map);
+        const plugin_list_row_t *row = list_active() ? plugin_list_hovered(&g_plugin_list) : NULL;
+        int16_t focus = row ? row->id : (node ? node->id : BM_NONE);
 
         g_plugin_map_stale = 0;
 
         // keep looking at the same box where it is still there; the request falls back to
         // the host's own choice of focus when it is not
-        BM_refresh_graph(node ? node->id : BM_NONE);
+        BM_refresh_graph(focus);
+        if (g_plugin_map.view_mode == PLUGIN_MAP_VIEW_LIST) list_reload(focus);
         BM_print_screen();
         return;
     }
@@ -1751,7 +1974,7 @@ void BM_print_screen(void)
     switch (uiState)
     {
         case PLUGIN_SELECT:
-            screen_plugin_map(&g_plugin_map, g_plugin_map_loaded, g_del_armed, !g_del_off);
+            screen_plugin_map(&g_plugin_map, &g_plugin_list, g_plugin_map_loaded, g_del_armed, !g_del_off);
         break;
         case BINDINGS:
         {
@@ -1786,7 +2009,7 @@ void BM_print_screen(void)
             // while a destination is being chosen the picture is the menu
             if (BM_conn_manager_is_picking())
             {
-                screen_connection_pick(&g_plugin_map, BM_conn_manager_pick_title());
+                screen_connection_pick(&g_plugin_map, &g_plugin_list, BM_conn_manager_pick_title());
                 break;
             }
 
