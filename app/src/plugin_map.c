@@ -41,6 +41,8 @@ static const glcd_dash_t DASH_BYPASS = { 2, 1 };
 ************************************************************************************************************************
 */
 
+static void build_order(plugin_map_t *map);
+
 // Reads a non-negative or negative decimal integer and advances the cursor past it.
 static int16_t read_int(const char **cursor)
 {
@@ -355,6 +357,14 @@ uint8_t plugin_map_parse(plugin_map_t *map, const char *text)
 
     if (!header_seen) return 0;
 
+    /*
+     * The order indexes into the nodes just replaced. Left as it was, a list on screen
+     * across a refetch -- an edit, a board changed from the web UI -- would read names
+     * off the wrong boxes, or off slots past the end of a smaller window.
+     */
+    if (map->view_mode == PLUGIN_MAP_VIEW_LIST)
+        build_order(map);
+
     // keep the selection pointing at the same plugin across a refetch; fall back to the focus mod-ui
     // used, then to the first node
     if (map->selected >= map->n_nodes) map->selected = BM_NONE;
@@ -641,6 +651,27 @@ void plugin_map_draw(glcd_t *display, const plugin_map_t *map)
     plugin_map_draw_graph(display, map);
 }
 
+// How far into a hardware box its point cuts. Keep in step with HW_POINT in mod-ui's
+// plugin_map.py: the display list carries a box's width, never its shape.
+#define HW_POINT 5
+
+// The columns a node covers on one of its rows, first and last inclusive. A plugin is a
+// plain box and covers all of them. A hardware terminal is drawn pointed on the side its
+// cable leaves by, tapering at 45 degrees to a tip on the middle row -- which is the row
+// the stub sits on, so the cable runs into the point instead of alongside it.
+static void node_row_span(const glcd_rect_t *rect, uint8_t kind, int16_t row,
+                          int16_t *left, int16_t *right)
+{
+    int16_t mid = (rect->height - 1) / 2;
+    int16_t taper = (row > mid) ? (row - mid) : (mid - row);
+
+    *left = rect->x;
+    *right = rect->x + rect->width - 1;
+
+    if (kind == BM_HW_SOURCE) *right -= taper;
+    else if (kind == BM_HW_SINK) *left += taper;
+}
+
 static void plugin_map_draw_graph(glcd_t *display, const plugin_map_t *map)
 {
     uint8_t i, j;
@@ -705,23 +736,69 @@ static void plugin_map_draw_graph(glcd_t *display, const plugin_map_t *map)
         rect.width = node->rect.width;
         rect.height = node->rect.height;
 
+        uint8_t pointed = (node->kind == BM_HW_SOURCE || node->kind == BM_HW_SINK);
+        int16_t row, left, right;
+        glcd_rect_t strip;
+
+        strip.height = 1;
+
         // clear the interior so cables do not run through the label
-        glcd_rect_fill_clip(display, &clip, &rect, GLCD_WHITE);
+        if (pointed)
+        {
+            for (row = 0; row < rect.height; row++)
+            {
+                node_row_span(&rect, node->kind, row, &left, &right);
+                strip.x = left;
+                strip.y = rect.y + row;
+                strip.width = right - left + 1;
+                glcd_rect_fill_clip(display, &clip, &strip, GLCD_WHITE);
+            }
+        }
+        else
+        {
+            glcd_rect_fill_clip(display, &clip, &rect, GLCD_WHITE);
+        }
 
         // Centring the label belongs here now that glcd_text_clip() takes coordinates like
-        // glcd_text() does, rather than a node.
+        // glcd_text() does, rather than a node. A pointed box centres it on the straight
+        // part, so the point does not pull the label off centre.
         if (node->label[0] != 0 && node->label[0] != '-')
         {
             int16_t text_width = glcd_text_width(Terminal3x5, node->label);
+            int16_t slot_x = rect.x + (node->kind == BM_HW_SINK ? HW_POINT : 0);
+            int16_t slot_w = pointed ? rect.width - HW_POINT : rect.width;
 
             glcd_text_clip(display, &clip,
-                           rect.x + ((rect.width - text_width) / 2),
+                           slot_x + ((slot_w - text_width) / 2),
                            rect.y + ((rect.height - Terminal3x5_HEIGHT) / 2),
                            node->label, Terminal3x5, GLCD_BLACK);
         }
 
-        // a bypassed plugin gets a dashed border; there is no colour to spare on a 1-bit panel
-        glcd_rect_clip(display, &clip, &rect, node->bypassed ? &DASH_BYPASS : 0, GLCD_BLACK);
+        if (pointed)
+        {
+            // the two sloping sides, then the flat top and bottom of the straight part
+            for (row = 0; row < rect.height; row++)
+            {
+                node_row_span(&rect, node->kind, row, &left, &right);
+                glcd_set_pixel_clip(display, &clip, left, rect.y + row, GLCD_BLACK);
+                glcd_set_pixel_clip(display, &clip, right, rect.y + row, GLCD_BLACK);
+            }
+
+            for (j = 0; j < 2; j++)
+            {
+                row = j ? (int16_t)(rect.height - 1) : 0;
+                node_row_span(&rect, node->kind, row, &left, &right);
+                strip.x = left;
+                strip.y = rect.y + row;
+                strip.width = right - left + 1;
+                glcd_rect_fill_clip(display, &clip, &strip, GLCD_BLACK);
+            }
+        }
+        else
+        {
+            // a bypassed plugin gets a dashed border; there is no colour to spare on a 1-bit panel
+            glcd_rect_clip(display, &clip, &rect, node->bypassed ? &DASH_BYPASS : 0, GLCD_BLACK);
+        }
     }
 
     // port stubs, drawn after the boxes so they sit on the border
@@ -741,11 +818,122 @@ static void plugin_map_draw_graph(glcd_t *display, const plugin_map_t *map)
     {
         const plugin_map_node_t *node = &map->nodes[map->selected];
 
+        int16_t row, left, right;
+        glcd_rect_t strip;
+
         rect.x = node->rect.x + dx;
         rect.y = node->rect.y + dy;
         rect.width = node->rect.width;
         rect.height = node->rect.height;
 
-        glcd_rect_invert_clip(display, &clip, &rect);
+        // row by row, following the outline, so the corners a pointed box does not
+        // occupy are left as background instead of flashing on with it
+        strip.height = 1;
+        for (row = 0; row < rect.height; row++)
+        {
+            node_row_span(&rect, node->kind, row, &left, &right);
+            strip.x = left;
+            strip.y = rect.y + row;
+            strip.width = right - left + 1;
+            glcd_rect_invert_clip(display, &clip, &strip);
+        }
+    }
+}
+
+void plugin_list_clear(plugin_list_t *list)
+{
+    if (!list) return;
+
+    list->count = 0;
+    list->first = 0;
+    list->total = 0;
+    list->hover = 0;
+    list->loaded = 0;
+}
+
+const plugin_list_row_t *plugin_list_hovered(const plugin_list_t *list)
+{
+    if (!list || !list->loaded) return 0;
+    if (list->hover < (int16_t) list->first) return 0;
+    if (list->hover >= (int16_t) (list->first + list->count)) return 0;
+
+    return &list->rows[list->hover - list->first];
+}
+
+uint8_t plugin_list_step(plugin_list_t *list, int8_t step)
+{
+    int16_t next;
+
+    if (!list || !list->loaded || list->total == 0) return 0;
+
+    // the two ends of the board; the list does not wrap, like the walk of the picture
+    next = list->hover + step;
+    if (next < 0 || next >= (int16_t) list->total) return 0;
+
+    list->hover = next;
+    return 1;
+}
+
+uint8_t plugin_list_needs_window(const plugin_list_t *list)
+{
+    if (!list || !list->loaded || list->total == 0) return 0;
+
+    if (!plugin_list_hovered(list)) return 1;
+
+    // the panel shows the rows above the cursor too, so the start of the window is an edge
+    // well before the cursor reaches it -- unless there is nothing before it to fetch
+    return list->first > 0 && (list->hover - list->first) < PLUGIN_LIST_MARGIN;
+}
+
+uint16_t plugin_list_window_for(const plugin_list_t *list)
+{
+    int16_t first;
+
+    if (!list) return 0;
+
+    // mod-ui pulls a window that would run off the end back, so only the start is clamped
+    first = list->hover - (PLUGIN_LIST_MAX_ROWS / 2);
+    return (first < 0) ? 0 : (uint16_t) first;
+}
+
+void plugin_list_draw(glcd_t *display, const glcd_rect_t *view, const plugin_list_t *list)
+{
+    const uint8_t pitch = 7;
+    glcd_rect_t clip, row;
+    int16_t visible, top, i;
+
+    if (!display || !view || !list || !list->loaded || list->count == 0) return;
+
+    clip = *view;
+
+    visible = view->height / pitch;
+    if (visible == 0) return;
+
+    /*
+     * Scrolled the way the window list scrolls: the cursor walks down the panel and then
+     * stays on the bottom row. Never above the rows held, should the cursor have outrun
+     * them; plugin_list_needs_window() is there so that it does not.
+     */
+    top = list->hover - visible + 1;
+    if (top < (int16_t) list->first) top = list->first;
+
+    for (i = 0; i < visible; i++)
+    {
+        int16_t at = top + i - list->first;
+        int16_t y = view->y + i * pitch;
+
+        if (at < 0 || at >= list->count) break;
+
+        glcd_text_clip(display, &clip, view->x + 2, y + 1,
+                       list->rows[at].title, Terminal3x5, GLCD_BLACK);
+
+        if (top + i == list->hover)
+        {
+            row.x = view->x;
+            row.y = y;
+            row.width = view->width;
+            row.height = pitch;
+            glcd_rect_invert_clip(display, &clip, &row);
+        }
     }
 }

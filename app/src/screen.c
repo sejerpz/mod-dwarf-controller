@@ -15,6 +15,7 @@
 #include "protocol.h"
 #include "mode_tools.h"
 #include "mode_navigation.h"
+#include "system.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -893,6 +894,25 @@ void screen_footer(uint8_t foot_id, const char *name, const char *value, int16_t
     
 }
 
+// top right corner of the title bar: glider and the WiFi state, when there is an
+// adapter (the icon's last column is on the empty first columns of the glider)
+static void title_icons(glcd_t *display)
+{
+    icon_custom_firmware(display, DISPLAY_WIDTH - 10, 1);
+
+    switch (system_wifi_icon())
+    {
+        case WIFI_ICON_AP:
+            icon_access_point(display, DISPLAY_WIDTH - 19, 1);
+        break;
+
+        case WIFI_ICON_CONNECTED:
+        case WIFI_ICON_DISCONNECTED:
+            icon_wifi(display, DISPLAY_WIDTH - 19, 1, system_wifi_icon() == WIFI_ICON_CONNECTED);
+        break;
+    }
+}
+
 void screen_tittle(int8_t pb_ss)
 {
     glcd_t *display = hardware_glcds(0);
@@ -919,7 +939,7 @@ void screen_tittle(int8_t pb_ss)
     else
         icon_pedalboard(display, ((DISPLAY_WIDTH / 2) - (3*name_len) + 7) - 11, 1);
 
-    icon_custom_firmware(display, DISPLAY_WIDTH - 10, 1);
+    title_icons(display);
     //invert the top bar
     glcd_rect_invert(display, 0, 0, DISPLAY_WIDTH, 9);
 }
@@ -1526,15 +1546,15 @@ void screen_shift_overlay(int8_t prev_mode, int16_t *item_ids, uint8_t ui_connec
     title.align = ALIGN_CENTER_TOP;
     widget_textbox(display, &title);
 
-    icon_custom_firmware(display, DISPLAY_WIDTH - 10, 1);
+    title_icons(display);
     //invert the title area
     glcd_rect_invert(display, 0, 0, DISPLAY_WIDTH, 9);
 
     //draw the outlines
     print_menu_outlines();
 
-    //draw the first box, save pb
-    glcd_text(display, 22, DISPLAY_HEIGHT - 7, "SAVE", Terminal3x5, GLCD_BLACK);
+    //draw the first box, pedalboard management
+    glcd_text(display, 26, DISPLAY_HEIGHT - 7, "PB", Terminal3x5, GLCD_BLACK);
 
     //draw the second box, menu/control mode
     glcd_text(display, 50, DISPLAY_HEIGHT - 7, "SETTNGS", Terminal3x5, GLCD_BLACK);
@@ -1542,10 +1562,8 @@ void screen_shift_overlay(int8_t prev_mode, int16_t *item_ids, uint8_t ui_connec
     if (previous_mode == MODE_TOOL_MENU)
         glcd_rect_invert(display, 49, DISPLAY_HEIGHT - 8, 30, 8);
 
-    //draw the third box, menu/builder mode
-    glcd_text(display, 90, DISPLAY_HEIGHT - 7, "EDIT", Terminal3x5, GLCD_BLACK);
-    if (previous_mode == MODE_BUILDER)
-        glcd_rect_invert(display, 83, DISPLAY_HEIGHT - 8, 30, 8);
+    //draw the third box, not used (edit moved to the pedalboard page)
+    glcd_text(display, 96, DISPLAY_HEIGHT - 7, "-", Terminal3x5, GLCD_BLACK);
 
     //print the 3 quick controls
     for (i = 0; i < 3; i++)
@@ -1704,6 +1722,19 @@ void screen_popup(system_popup_t *popup_data)
         //cursor
         glcd_rect(display, 8 + (6*popup_data->cursor_index), 22, 5, 1, GLCD_BLACK);
     }
+    //pedalboard management, list the options and highlight the hovered one
+    else if (popup_data->id == POPUP_PB_MANAGE_ID) {
+        static const char *pb_manage_items[] = PB_MANAGE_ITEMS;
+
+        uint8_t i;
+        for (i = 0; i < PB_MANAGE_ITEMS_COUNT; i++) {
+            uint8_t y = 14 + (i * 9);
+            glcd_text(display, 8, y, pb_manage_items[i], Terminal3x5, GLCD_BLACK);
+
+            if (i == popup_data->cursor_index)
+                glcd_rect_invert(display, 4, y - 2, DISPLAY_WIDTH - 8, 9);
+        }
+    }
     else {
         switch (popup_data->button_value) {
             case 0:
@@ -1822,6 +1853,18 @@ void screen_text_box(uint8_t x, uint8_t y, const char *text)
 }
 
 
+/* a board with no plugins, in the middle of the space the plugins would take */
+static void print_empty_pedalboard(glcd_t *display)
+{
+    static const char first[] = "EMPTY";
+    static const char second[] = "PEDALBOARD";
+
+    glcd_text(display, (DISPLAY_WIDTH - glcd_text_width(Terminal7x8, first)) / 2,
+              DISPLAY_HEIGHT / 2 - 10, first, Terminal7x8, GLCD_BLACK);
+    glcd_text(display, (DISPLAY_WIDTH - glcd_text_width(Terminal7x8, second)) / 2,
+              DISPLAY_HEIGHT / 2, second, Terminal7x8, GLCD_BLACK);
+}
+
 void screen_plugins_list(menu_item_t *item)
 {
     glcd_t *display;
@@ -1877,7 +1920,7 @@ void screen_plugins_list(menu_item_t *item)
     {
         glcd_text(display, 34, DISPLAY_HEIGHT - 7, "-", Terminal3x5, GLCD_BLACK);
 
-        glcd_text(display, DISPLAY_WIDTH / 2 - 32, DISPLAY_HEIGHT / 2 -5, "NO PLUGINS", Terminal7x8, GLCD_BLACK);
+        print_empty_pedalboard(display);
     }
 
     // led handling
@@ -1908,12 +1951,23 @@ void screen_plugins_list(menu_item_t *item)
  * button labels -- and the graph is drawn into the gap between them. plugin_map_draw()
  * clips to the viewport mode_builder.c set, so nothing here can spill over the footer.
  */
-void screen_plugin_map(plugin_map_t *map, uint8_t loaded, uint8_t armed, uint8_t blink_reverse)
+void screen_plugin_map(plugin_map_t *map, const plugin_list_t *list, uint8_t loaded,
+                       uint8_t armed, uint8_t blink_reverse)
 {
     glcd_t *display;
     display = hardware_glcds(0);
 
     const plugin_map_node_t *node = loaded ? plugin_map_selected(map) : NULL;
+
+    /*
+     * The list cursor moves without the graph, which catches up only when something needs
+     * the box: until then it is the row, not the graph's selection, that is on screen.
+     */
+    uint8_t from_list = (map->view_mode == PLUGIN_MAP_VIEW_LIST && list && list->loaded);
+    const plugin_list_row_t *row = from_list ? plugin_list_hovered(list) : NULL;
+
+    const char *title = row ? row->title : (node ? node->title : NULL);
+    uint8_t kind = row ? row->kind : (node ? node->kind : 0);
 
     // clear screen
     glcd_clear(display, GLCD_WHITE);
@@ -1926,7 +1980,7 @@ void screen_plugin_map(plugin_map_t *map, uint8_t loaded, uint8_t armed, uint8_t
     title_box.font = Terminal3x5;
     title_box.top_margin = 1;
     title_box.align = ALIGN_CENTER_TOP;
-    title_box.text = (node && node->title[0]) ? node->title : "PEDALBOARD";
+    title_box.text = (title && title[0]) ? title : "PEDALBOARD";
     widget_textbox(display, &title_box);
 
     //invert the title area
@@ -1945,7 +1999,7 @@ void screen_plugin_map(plugin_map_t *map, uint8_t loaded, uint8_t armed, uint8_t
      * box it would remove, the whole button the way print_menu_boxes() draws it, so the two
      * read as one thing about to happen.
      */
-    if (node && node->kind == BM_PLUGIN)
+    if (kind == BM_PLUGIN)
     {
         glcd_text(display, 92, DISPLAY_HEIGHT - 7, "DEL", Terminal3x5, GLCD_BLACK);
 
@@ -1953,13 +2007,17 @@ void screen_plugin_map(plugin_map_t *map, uint8_t loaded, uint8_t armed, uint8_t
             glcd_rect_invert(display, 82, DISPLAY_HEIGHT - 9, 31, 9);
     }
 
-    if (loaded && map->n_nodes > 0)
+    if (from_list && list->total > 0)
+    {
+        plugin_list_draw(display, &map->view, list);
+    }
+    else if (!from_list && loaded && map->n_nodes > 0)
     {
         plugin_map_draw(display, map);
     }
     else
     {
-        glcd_text(display, DISPLAY_WIDTH / 2 - 32, DISPLAY_HEIGHT / 2 -5, "NO PLUGINS", Terminal7x8, GLCD_BLACK);
+        print_empty_pedalboard(display);
     }
 
     // led handling
@@ -2267,7 +2325,7 @@ static void draw_offset_column(glcd_t *display, uint8_t x, uint8_t width, uint8_
  * it on the picture beats picking it off a list of names that says nothing about where it
  * sits -- and the list mode is there for when the name is what you know.
  */
-void screen_connection_pick(plugin_map_t *map, const char *title)
+void screen_connection_pick(plugin_map_t *map, const plugin_list_t *list, const char *title)
 {
     glcd_t *display;
     display = hardware_glcds(0);
@@ -2292,7 +2350,10 @@ void screen_connection_pick(plugin_map_t *map, const char *title)
     // the same gesture as every other step of building a connection
     glcd_text(display, 52, DISPLAY_HEIGHT - 7, "SELECT", Terminal3x5, GLCD_BLACK);
 
-    plugin_map_draw(display, map);
+    if (map->view_mode == PLUGIN_MAP_VIEW_LIST && list && list->loaded)
+        plugin_list_draw(display, &map->view, list);
+    else
+        plugin_map_draw(display, map);
 
     for (uint8_t i = 0; i < FOOTSWITCHES_COUNT; i++)
         ledz_off(hardware_leds(i), WHITE);
@@ -2756,7 +2817,7 @@ void screen_plugin_edit(plugin_edit_t *model)
     }
 
     icon_plugin(display, ((DISPLAY_WIDTH / 2) - (3*title_len) + 7) - 11, 1);
-    icon_custom_firmware(display, DISPLAY_WIDTH - 10, 1);
+    title_icons(display);
 
     //invert the top bar
     glcd_rect_invert(display, 0, 0, DISPLAY_WIDTH, 9);

@@ -1986,14 +1986,25 @@ void NM_set_selected_index(uint8_t list_type, int16_t index)
 {
     switch(list_type) {
         case PEDALBOARD_LIST:
+        {
             if (index == -1) {
-                g_pedalboards->selected = g_pedalboards->menu_max + 1;
+                if (g_pedalboards)
+                    g_pedalboards->selected = g_pedalboards->menu_max + 1;
             }
-            else {                
+            else {
                 g_current_pedalboard = index;
             }
 
-            if ((g_banks->bp_flag[g_banks->hover - g_banks->page_min]) == 0)
+            // the lists are only there once navigation was entered: after boot or a web-ui
+            // disconnect (NM_clear) g_banks stays NULL, and a MIDI program change still sends
+            // pchng. The index above is enough then, NM_toggle_mode() syncs the lists from it
+            if (!g_banks || !g_pedalboards)
+                break;
+
+            int32_t bank_offset = g_banks->hover - g_banks->page_min;
+
+            if (g_banks->bp_flag && (bank_offset >= 0) && (bank_offset < (g_banks->page_max - g_banks->page_min)) &&
+                (g_banks->bp_flag[bank_offset] == 0))
             {
                 if (g_pedalboards->hover == 0)
                     g_current_list = PB_LIST_BEGINNING_BOX;
@@ -2009,6 +2020,7 @@ void NM_set_selected_index(uint8_t list_type, int16_t index)
             }
 
         break;
+        }
 
         case SNAPSHOT_LIST:
             g_current_snapshot = index;

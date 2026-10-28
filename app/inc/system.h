@@ -38,6 +38,9 @@
 ************************************************************************************************************************
 */
 
+// title bar icon of the WiFi state
+enum {WIFI_ICON_NONE, WIFI_ICON_AP, WIFI_ICON_CONNECTED, WIFI_ICON_DISCONNECTED};
+
 /*
 ************************************************************************************************************************
 *           GLOBAL VARIABLES
@@ -61,6 +64,13 @@ int16_t system_get_shift_item(uint8_t index);
 void system_update_menu_value(uint8_t item_ID, uint16_t value);
 uint8_t system_get_clock_source(void);
 void system_bluetooth_cb(void *arg, int event);
+void system_wifi_cb(void *arg, int event);
+void system_wifi_ip_cb(void *arg, int event);
+void system_wifi_ap_cb(void *arg, int event);
+uint8_t system_wifi_ap_on(void);
+uint8_t system_wifi_icon(void);
+void system_wifi_request_check(void);
+void system_wifi_check(void);
 void system_info_cb(void *arg, int event);
 void system_upgrade_cb(void *arg, int event);
 void system_inp_0_volume_cb(void *arg, int event);

@@ -109,6 +109,15 @@
 // keep the selected box this far from the viewport edge when scrolling to it
 #define PLUGIN_MAP_SCROLL_MARGIN   6
 
+// Rows of the list view held at once, out of a list as long as the board. Mirrored by
+// PLUGIN_MAP_MAX_LIST in mod-ui's settings.py, which never sends more than this.
+#define PLUGIN_LIST_MAX_ROWS       48
+
+// A new window is asked for before the cursor gets this close to the start of the one in
+// hand, so the rows the panel shows above the cursor are always there to draw. More than
+// the rows that fit in the viewport.
+#define PLUGIN_LIST_MARGIN         8
+
 
 /*
 ************************************************************************************************************************
@@ -165,10 +174,15 @@ typedef struct PLUGIN_MAP_T {
     int16_t offset_x, offset_y;     // scene -> panel pan
     int8_t selected;        // index into nodes, or BM_NONE
     uint8_t layers;         // which signal types to draw
-    uint8_t view_mode;
-    uint8_t blink_off;      // hold the selection highlight back, for a blink      // PLUGIN_MAP_VIEW_GRAPH or PLUGIN_MAP_VIEW_LIST
+    uint8_t view_mode;      // PLUGIN_MAP_VIEW_GRAPH or PLUGIN_MAP_VIEW_LIST
+    uint8_t blink_off;      // hold the selection highlight back, for a blink
 
-    // the nodes in alphabetical order, for the list view; rebuilt when the mode is set
+    /*
+     * The nodes of this window in alphabetical order, rebuilt when the mode is set and on
+     * every parse. Only what the list view falls back on when there is no plugin_list_t
+     * to draw -- a host that does not answer CMD_BUILDER_PLUGIN_LIST -- since a window
+     * holds a few dozen boxes and a big board has more.
+     */
     uint8_t order[PLUGIN_MAP_MAX_NODES];
 
     /*
@@ -179,6 +193,29 @@ typedef struct PLUGIN_MAP_T {
     uint8_t selectable[PLUGIN_MAP_MAX_NODES];
     uint8_t filtered;
 } plugin_map_t;
+
+typedef struct PLUGIN_LIST_ROW_T {
+    int16_t id;             // node id as sent on the wire, the same numbering as the graph
+    uint8_t kind;           // BM_PLUGIN / BM_HW_SOURCE / BM_HW_SINK
+    char title[PLUGIN_MAP_TITLE_SIZE];
+} plugin_list_row_t;
+
+/*
+ * The list view: every plugin on the board by name, which mod-ui sends a window at a time
+ * the way it sends the plugin catalog. Not taken from the graph's window, whose boxes are
+ * the ones around the selection -- their alphabetical neighbours are anywhere on the board.
+ *
+ * The cursor is an absolute position in the whole list and moves without the graph: what
+ * the graph has selected catches up only when something needs the box itself.
+ */
+typedef struct PLUGIN_LIST_T {
+    plugin_list_row_t rows[PLUGIN_LIST_MAX_ROWS];
+    uint8_t count;          // rows held
+    uint16_t first;         // position of rows[0] in the whole list
+    uint16_t total;         // how long the whole list is
+    int16_t hover;          // position of the cursor in the whole list
+    uint8_t loaded;         // the host answered; off, the list view falls back on the window
+} plugin_list_t;
 
 
 /*
@@ -235,7 +272,7 @@ void plugin_map_scroll(plugin_map_t *map, int16_t dx, int16_t dy);
 // glcd_update().
 void plugin_map_draw(glcd_t *display, const plugin_map_t *map);
 
-// Switches between the picture and the list. Rebuilds the alphabetical order.
+// Switches between the picture and the list. Rebuilds the alphabetical order of the window.
 void plugin_map_set_view_mode(plugin_map_t *map, uint8_t mode);
 
 // Restricts what the cursor may land on to these wire ids. A count of zero clears the
@@ -248,6 +285,26 @@ const plugin_map_node_t *plugin_map_selected(const plugin_map_t *map);
 // True when the node has a cable leading out of this window, i.e. there is more graph that way and the
 // caller should ask mod-ui for a window centred elsewhere.
 uint8_t plugin_map_has_offscreen_link(const plugin_map_t *map, int8_t node);
+
+// Empties the list and marks it not loaded.
+void plugin_list_clear(plugin_list_t *list);
+
+// The row under the cursor, or NULL when it is outside the rows held.
+const plugin_list_row_t *plugin_list_hovered(const plugin_list_t *list);
+
+// Moves the cursor by one row either way, stopping at the two ends. Returns 1 when it moved.
+uint8_t plugin_list_step(plugin_list_t *list, int8_t step);
+
+// Whether the cursor has walked off the rows held, or close enough to the start of them
+// that the panel would show rows that are not there. Ask for plugin_list_window_for() then.
+uint8_t plugin_list_needs_window(const plugin_list_t *list);
+
+// The first row to ask for so the cursor lands in the middle of the next window.
+uint16_t plugin_list_window_for(const plugin_list_t *list);
+
+// Draws the rows around the cursor into `view`, the cursor row inverted. The same look as
+// the list view of plugin_map_draw(); does not clear the screen.
+void plugin_list_draw(glcd_t *display, const glcd_rect_t *view, const plugin_list_t *list);
 
 
 /*

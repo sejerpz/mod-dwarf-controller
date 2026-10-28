@@ -30,6 +30,7 @@
 #include "mode_navigation.h"
 #include "mode_builder.h"
 #include "mode_tools.h"
+#include "system.h"
 #include "LPC177x_8x.h"
 #include "memory_map.h"
 
@@ -259,7 +260,7 @@ static void displays_task(void *pvParameters)
 {
     UNUSED_PARAM(pvParameters);
 
-    uint32_t count = 0;
+    portTickType last_menu_update = xTaskGetTickCount();
 
     while (1)
     {
@@ -281,18 +282,22 @@ static void displays_task(void *pvParameters)
             g_screenshot = 0;
         }
 
+        //menu items that refresh themselves (need_update)
         if (TM_need_update_menu())
         {
-            if (++count == 5000)
+            if ((xTaskGetTickCount() - last_menu_update) >= (MENU_UPDATE_INTERVAL / portTICK_RATE_MS))
             {
                 TM_update_menu();
-                count = 0;
+                last_menu_update = xTaskGetTickCount();
             }
         }
         else
         {
-            count = 0;
+            last_menu_update = xTaskGetTickCount();
         }
+
+        //access point state outside the WIFI page (title icon, mod LED)
+        system_wifi_check();
 
         taskYIELD();
     }

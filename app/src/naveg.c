@@ -178,8 +178,8 @@ void enter_shift_menu(void)
     led = hardware_leds(3);
     set_ledz_trigger_by_color_id(led, LED_ON, led_state);
 
-    led = hardware_leds(5);
-    set_ledz_trigger_by_color_id(led, LED_ON, led_state);
+    //button 3 is not used in the shift menu
+    ledz_off(hardware_leds(5), WHITE);
 
     led = hardware_leds(6);
     set_ledz_trigger_by_color_id(led, LED_ON, led_state);
@@ -267,7 +267,7 @@ void exit_popup(void)
         break;
 
         case MODE_BUILDER:
-            //not defined yet
+            BM_set_state();
         break;
     }
 }
@@ -1091,16 +1091,9 @@ void naveg_button_pressed(uint8_t button)
         case MODE_SHIFT:
             switch(button)
             {
-                //save pedalboard
+                //pedalboard management
                 case 0:
-                    if (g_ui_connected)
-                    {
-                        shift_mode_active = false;
-                        PM_launch_attention_overlay("\nPlease disconnect   the Web-ui to save aPedalboard/Snapshot", exit_shift_menu);
-                        return;
-                    }
-
-                    naveg_trigger_popup(POPUP_SAVE_SELECT_ID);
+                    naveg_trigger_popup(POPUP_PB_MANAGE_ID);
                     shift_mode_active = false;
                 break;
 
@@ -1147,25 +1140,14 @@ void naveg_button_pressed(uint8_t button)
                     
                     if (!g_self_test_mode)
                         ledz_off(hardware_leds(6), WHITE);
+
+                    //back to control mode: the mod LED shows the access point again
+                    if (g_device_mode == MODE_CONTROL)
+                        CM_set_wifi_led();
                 break;
 
-                //TODO enter builder mode
+                //not used, edit is in the pedalboard page
                 case 2:
-                    shift_mode_active = false;
-                    if (g_prev_shift_device_mode != MODE_BUILDER)
-                    {
-                        // close the shift menu
-                        // exit_shift_menu();
-                        // naveg_shift_pressed();
-                        // naveg_trigger_mode_change(MODE_BUILDER);
-                        g_device_mode = MODE_BUILDER;
-                        BM_enter();
-                    }
-                    else
-                    {
-                        g_device_mode = MODE_CONTROL;
-                        CM_set_state();
-                    }
                 break;
             }
         break;
@@ -1378,9 +1360,9 @@ void naveg_trigger_mode_change(uint8_t mode)
 
     /*
      * Every path out of the builder comes through here, and this is where the host is told.
-     * After the mode has changed, not before: the host answers this and then sends the
-     * addressings back for control mode, and cb_control_add() reads the current mode to
-     * decide where they go.
+     * After the mode has changed, not before: BM_exit() then has control mode fetch its page
+     * again when bindings were made in the builder, and cb_control_add() reads the current
+     * mode to decide where those controls go.
      */
     if (leaving_builder)
         BM_exit();
@@ -1411,8 +1393,10 @@ void naveg_trigger_popup(int8_t popup_id)
     }
     //close popup
     else {
+        //a popup opened from the shift menu goes back to control mode, except when the
+        //shift menu was opened from the builder: that one was never left, so go back to it
         if (prev_mode == MODE_SHIFT)
-            g_device_mode = MODE_CONTROL;
+            g_device_mode = (g_prev_shift_device_mode == MODE_BUILDER) ? MODE_BUILDER : MODE_CONTROL;
         else
             g_device_mode = prev_mode;
 

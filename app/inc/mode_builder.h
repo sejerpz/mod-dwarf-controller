@@ -93,6 +93,13 @@ void BM_foot_change(uint8_t foot);
 // polled from the displays task: drives the blink of a cable armed for deletion
 void BM_tick(void);
 
+// New pedalboard: enter the builder once the host has finished loading the new board. Not
+// straight away, because the load tells the panel it is starting and the builder leaves on
+// that. BM_pedalboard_loaded() is the end of the load, and only raises a flag: it comes from
+// a protocol callback, and entering the builder sends commands.
+void BM_enter_after_load(void);
+void BM_pedalboard_loaded(void);
+
 // returns true if control was added
 bool BM_add_control(control_t *control, uint8_t protocol);
 bool BM_remove_control(uint8_t hw_id);

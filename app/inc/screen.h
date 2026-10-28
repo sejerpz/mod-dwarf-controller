@@ -199,10 +199,14 @@ void screen_plugins_list(menu_item_t *item);
 // `armed` puts DEL on the third button, and `blink_reverse` is which half of its flash
 // this is: the button and the box it would remove flash together, as one thing about to
 // happen.
-void screen_plugin_map(plugin_map_t *map, uint8_t loaded, uint8_t armed, uint8_t blink_reverse);
+// In the list view `list` is what is drawn, and its cursor is what the title bar names;
+// NULL, or a list the host never answered, falls back on the graph's own window.
+void screen_plugin_map(plugin_map_t *map, const plugin_list_t *list, uint8_t loaded,
+                       uint8_t armed, uint8_t blink_reverse);
 void screen_connections(connections_t *model);
-// the plugin_map used as a chooser: same picture, a title saying what for
-void screen_connection_pick(plugin_map_t *map, const char *title);
+// the plugin_map used as a chooser: same picture, a title saying what for, and in the
+// list view the boxes in `list` -- the same fallback when there is none
+void screen_connection_pick(plugin_map_t *map, const plugin_list_t *list, const char *title);
 void screen_plugin_manager(plugin_manager_t *model);
 void screen_plugin_info(plugin_info_t *model);
 void screen_bindings(bindings_t *model);

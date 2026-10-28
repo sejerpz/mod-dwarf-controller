@@ -4,9 +4,13 @@
 ************************************************************************************************************************
 */
 
+#include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
+
+#include "FreeRTOS.h"
+#include "task.h"
 
 #include "system.h"
 #include "config.h"
@@ -482,6 +486,289 @@ void system_bluetooth_cb(void *arg, int event)
             sys_comm_wait_response();
         }
     }
+}
+
+/*
+ * WIFI page: state read from "wifi-ap status" (alabs-mod-wifi project), one line:
+ *   on <ip> <ssid>
+ *   off <ip|none> <ap|noap> [<last error>]
+ *   starting | stopping
+ *   error <reason>
+ */
+enum {WIFI_UNKNOWN, WIFI_NO_DEVICE, WIFI_OFF, WIFI_ON, WIFI_STARTING, WIFI_STOPPING};
+static uint8_t g_wifi_state = WIFI_UNKNOWN;
+static uint8_t g_wifi_ap_supported = 0;
+// icon in the title bar (WIFI_ICON_*), kept while the access point is starting / stopping
+static uint8_t g_wifi_icon = WIFI_ICON_NONE;
+// set by the protocol task at the end of a pedalboard load, read by the displays task
+static volatile uint8_t g_wifi_check_requested = 0;
+// list values are shown on 2 lines of max 9 chars, split at the first space
+static char g_wifi_ip_text[20];
+static char g_wifi_status_text[20];
+
+// "192.168.0.151" -> "192.168. 0.151" (2 lines)
+static void wifi_set_ip_text(const char *ip)
+{
+    const char *dot = strchr(ip, '.');
+    if (dot)
+        dot = strchr(dot + 1, '.');
+
+    if (dot && (dot - ip) < 9 && strlen(dot + 1) <= 9)
+    {
+        uint8_t len = dot - ip + 1;
+        memcpy(g_wifi_ip_text, ip, len);
+        g_wifi_ip_text[len] = ' ';
+        strcpy(&g_wifi_ip_text[len + 1], dot + 1);
+    }
+    else
+    {
+        strncpy(g_wifi_ip_text, ip, 9);
+        g_wifi_ip_text[9] = '\0';
+    }
+}
+
+static void wifi_set_ap_text(menu_item_t *item)
+{
+    if (!g_wifi_ap_supported)
+        item->data.unit_text = "N/A";
+    else
+        item->data.unit_text = ((int)item->data.value == 1) ? "ON" : "OFF";
+}
+
+static void wifi_read_status(void)
+{
+    char status[LINE_BUFFER_SIZE + 1] = {};
+
+    // the response buffer is reused by the next cli command: copy it
+    const char *response = cli_command("wifi-ap status", CLI_RETRIEVE_RESPONSE);
+    if (response)
+        strncpy(status, response, sizeof(status) - 1);
+
+    // split "<word> <arg1> <arg2> <arg3>"
+    char *args[3] = {};
+    char *p = status;
+    uint8_t i;
+    for (i = 0; i < 3; i++)
+    {
+        p = strchr(p, ' ');
+        if (!p)
+            break;
+        *p++ = '\0';
+        args[i] = p;
+    }
+
+    if (strcmp(status, "on") == 0 && args[0])
+    {
+        g_wifi_state = WIFI_ON;
+        g_wifi_ap_supported = 1;
+        wifi_set_ip_text(args[0]);
+        // "ON <ssid>", ssid on the second line
+        strcpy(g_wifi_status_text, "ON ");
+        strncat(g_wifi_status_text, args[1] ? args[1] : "", 9);
+    }
+    else if (strcmp(status, "off") == 0 && args[0])
+    {
+        g_wifi_state = WIFI_OFF;
+        g_wifi_ap_supported = (args[1] && strcmp(args[1], "ap") == 0);
+
+        if (strcmp(args[0], "none") == 0)
+            strcpy(g_wifi_ip_text, "NOT CONNECTED");
+        else
+            wifi_set_ip_text(args[0]);
+
+        if (!g_wifi_ap_supported)
+            strcpy(g_wifi_status_text, "NOT SUPPORTED");
+        else if (args[2])
+            strcpy(g_wifi_status_text, "FAILED");
+        else
+            strcpy(g_wifi_status_text, "OFF");
+    }
+    else if (strcmp(status, "starting") == 0 || strcmp(status, "stopping") == 0)
+    {
+        g_wifi_state = (status[2] == 'a') ? WIFI_STARTING : WIFI_STOPPING;
+        strcpy(g_wifi_ip_text, "-");
+        strcpy(g_wifi_status_text, (g_wifi_state == WIFI_STARTING) ? "STARTING" : "STOPPING");
+    }
+    else if (strcmp(status, "error") == 0 && args[0] && strcmp(args[0], "no-wifi-device") == 0)
+    {
+        g_wifi_state = WIFI_NO_DEVICE;
+        g_wifi_ap_supported = 0;
+        strcpy(g_wifi_ip_text, "NO DEVICE");
+        strcpy(g_wifi_status_text, "NO WIFI");
+    }
+    else
+    {
+        // no answer, or wifi-ap not installed
+        g_wifi_state = WIFI_UNKNOWN;
+        g_wifi_ap_supported = 0;
+        strcpy(g_wifi_ip_text, "N/A");
+        strcpy(g_wifi_status_text, "N/A");
+    }
+
+    if (g_wifi_state == WIFI_ON)
+        g_wifi_icon = WIFI_ICON_AP;
+    else if (g_wifi_state == WIFI_OFF)
+        g_wifi_icon = (strcmp(args[0], "none") == 0) ? WIFI_ICON_DISCONNECTED : WIFI_ICON_CONNECTED;
+    else if (g_wifi_state == WIFI_NO_DEVICE || g_wifi_state == WIFI_UNKNOWN)
+        g_wifi_icon = WIFI_ICON_NONE;
+
+    menu_item_t *item = TM_get_menu_item_by_ID(WIFI_IP_ID);
+    if (item)
+        item->data.unit_text = g_wifi_ip_text;
+
+    item = TM_get_menu_item_by_ID(WIFI_AP_STATUS_ID);
+    if (item)
+        item->data.unit_text = g_wifi_status_text;
+
+    item = TM_get_menu_item_by_ID(WIFI_AP_ID);
+    if (item && !item->data.popup_active)
+    {
+        // keep the value chosen with the encoder while waiting for the click
+        uint8_t pending = ((int)item->data.value != item->data.selected);
+
+        item->data.selected = (g_wifi_state == WIFI_ON || g_wifi_state == WIFI_STARTING) ? 1 : 0;
+        if (!pending || !g_wifi_ap_supported)
+            item->data.value = item->data.selected;
+
+        wifi_set_ap_text(item);
+    }
+
+    // follows the access point while the page is on screen
+    TM_set_wifi_led();
+}
+
+// WIFI page: refreshed periodically while it is on screen (need_update)
+void system_wifi_cb(void *arg, int event)
+{
+    (void) arg;
+
+    if (event == MENU_EV_NONE)
+        wifi_read_status();
+}
+
+// first item of the page, its refresh reads the state for the whole page
+void system_wifi_ip_cb(void *arg, int event)
+{
+    (void) arg;
+
+    if (event == MENU_EV_NONE)
+        wifi_read_status();
+}
+
+void system_wifi_ap_cb(void *arg, int event)
+{
+    menu_item_t *item = arg;
+
+    item->data.min = 0;
+    item->data.max = 1;
+    item->data.step = 1;
+    item->data.list_count = 2;
+
+    //clicked and OK selected in the pop-up: switch the access point
+    if ((event == MENU_EV_ENTER) && (item->data.hover == 0))
+    {
+        if ((int)item->data.value != item->data.selected)
+        {
+            // runs in background, the page shows STARTING/STOPPING
+            cli_command(((int)item->data.value == 1) ? "wifi-ap on -b" : "wifi-ap off -b",
+                        CLI_RETRIEVE_RESPONSE);
+            item->data.selected = item->data.value;
+            wifi_read_status();
+        }
+    }
+    //cancel, reset widget
+    else if (event == MENU_EV_ENTER)
+    {
+        item->data.value = item->data.selected;
+    }
+
+    if (item->data.popup_active)
+        return;
+
+    // can't switch while busy or without AP support
+    uint8_t can_switch = g_wifi_ap_supported &&
+                         (g_wifi_state == WIFI_ON || g_wifi_state == WIFI_OFF);
+
+    if (can_switch && (event == MENU_EV_UP) && (item->data.value < item->data.max))
+        item->data.value++;
+    else if (can_switch && (event == MENU_EV_DOWN) && (item->data.value > item->data.min))
+        item->data.value--;
+
+    wifi_set_ap_text(item);
+}
+
+// access point on: blue mod LED in control mode
+uint8_t system_wifi_ap_on(void)
+{
+    return (g_wifi_state == WIFI_ON);
+}
+
+// icon in the title bar: access point, client connected / not connected, none
+uint8_t system_wifi_icon(void)
+{
+    return g_wifi_icon;
+}
+
+// end of a pedalboard load (protocol task): the displays task reads the state
+void system_wifi_request_check(void)
+{
+    g_wifi_check_requested = 1;
+}
+
+/*
+ * State outside the WIFI page: read when leaving the tool menu, at the end of a
+ * pedalboard load (also the one at boot) and, while the access point is starting
+ * or stopping, every WIFI_CHECK_INTERVAL. No polling otherwise: the access point
+ * is switched only from the WIFI page, a change of the client connection is seen
+ * at the next of those events.
+ * Called by the displays task only, the one that refreshes the WIFI page too:
+ * the cli has a single response buffer.
+ */
+#define WIFI_CHECK_INTERVAL 2000
+
+void system_wifi_check(void)
+{
+    static uint8_t last_mode = MODE_CONTROL;
+    static uint8_t pending = 0;
+    static portTickType last_check = 0;
+
+    uint8_t mode = naveg_get_current_mode();
+
+    // the shift menu is on the way out of the tool menu (MENU button)
+    if (mode != MODE_SHIFT)
+    {
+        if (last_mode == MODE_TOOL_MENU && mode != MODE_TOOL_MENU)
+            pending = 1;
+        last_mode = mode;
+    }
+
+    if (g_wifi_check_requested)
+    {
+        g_wifi_check_requested = 0;
+        pending = 1;
+    }
+
+    // the WIFI page reads the state by itself
+    if (TM_need_update_menu())
+        return;
+
+    if ((g_wifi_state == WIFI_STARTING || g_wifi_state == WIFI_STOPPING) &&
+        (xTaskGetTickCount() - last_check) >= (WIFI_CHECK_INTERVAL / portTICK_RATE_MS))
+        pending = 1;
+
+    // nothing must be typed on the login prompt
+    if (!pending || !g_device_booted || cli_restore(RESTORE_STATUS) != LOGGED_ON_SYSTEM)
+        return;
+
+    pending = 0;
+    last_check = xTaskGetTickCount();
+
+    uint8_t was_on = system_wifi_ap_on();
+    uint8_t was_icon = system_wifi_icon();
+    wifi_read_status();
+
+    if ((system_wifi_ap_on() != was_on) || (system_wifi_icon() != was_icon))
+        CM_update_wifi_indicator();
 }
 
 void system_info_cb(void *arg, int event)
