@@ -117,6 +117,12 @@ void ui_comm_init(void)
 
 void ui_comm_webgui_send(const char *data, uint32_t data_size)
 {
+    // A command, not a response: the wait for its answer starts before the bytes leave, as in
+    // sys_comm_send(). Raised after sending, the flag could go up only once the answer had already
+    // come and cleared it, and the wait would never end.
+    if (strncmp(data, "r ", 2) != 0)
+        g_webgui_blocked = 1;
+
     serial_send(WEBGUI_SERIAL, (const uint8_t*)data, data_size+1);
 }
 
@@ -147,9 +153,9 @@ void ui_comm_webgui_response_cb(void *data)
     g_webgui_blocked = 0;
 }
 
+// the flag went up when the command was sent, see ui_comm_webgui_send()
 void ui_comm_webgui_wait_response(void)
 {
-    g_webgui_blocked = 1;
     while (g_webgui_blocked);
 }
 
@@ -160,7 +166,7 @@ void ui_comm_webgui_wait_response(void)
  */
 void ui_comm_webgui_wait_begin(void)
 {
-    g_webgui_blocked = 1;
+    // nothing left to do: the flag went up when the command was sent, see ui_comm_webgui_send()
 }
 
 uint8_t ui_comm_webgui_wait_pending(void)
