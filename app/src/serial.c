@@ -7,6 +7,8 @@
 
 #include "serial.h"
 #include "device.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
 
 /*
@@ -375,6 +377,13 @@ uint32_t serial_send(uint8_t uart_id, const uint8_t *data, uint32_t data_size)
 
     if (!serial) return 0;
 
+    // Several tasks send on the same port -- a command from the actuators while the system task answers
+    // a bitmap, say -- and a message must leave whole: another task getting in halfway through mixes the
+    // bytes of both, and the host drops the result. No task switch until it is all queued; interrupts
+    // stay on, so the transmit interrupt keeps draining the buffer when the message does not fit at once.
+    const uint8_t scheduler_running = xTaskGetSchedulerState() == taskSCHEDULER_RUNNING;
+    if (scheduler_running) vTaskSuspendAll();
+
     // Temporarily lock out UART transmit interrupts during this
     // read so the UART transmit interrupt won't cause problems
     // with the index values
@@ -397,6 +406,8 @@ uint32_t serial_send(uint8_t uart_id, const uint8_t *data, uint32_t data_size)
             index += written;
         }
     }
+
+    if (scheduler_running) xTaskResumeAll();
 
     return data_size;
 }
