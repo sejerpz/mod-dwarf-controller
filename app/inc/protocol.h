@@ -98,6 +98,8 @@ void cb_launch_popup(uint8_t serial_id, proto_t *proto);
 void cb_glcd_text(uint8_t serial_id, proto_t *proto);
 void cb_glcd_dialog(uint8_t serial_id, proto_t *proto);
 void cb_glcd_draw(uint8_t serial_id, proto_t *proto);
+void cb_widget_area_add(uint8_t serial_id, proto_t *proto);
+void cb_widget_area_remove(uint8_t serial_id, proto_t *proto);
 void cb_gui_connection(uint8_t serial_id, proto_t *proto);
 void cb_control_add(uint8_t serial_id, proto_t *proto);
 void cb_control_rm(uint8_t serial_id, proto_t *proto);
@@ -123,6 +125,8 @@ void cb_clear_eeprom(uint8_t serial_id, proto_t *proto);
 void cb_set_pb_gain(uint8_t serial_id, proto_t *proto);
 void cb_pedalboard_change(uint8_t serial_id, proto_t *proto);
 void cb_screenshot(uint8_t serial_id, proto_t *proto);
+void cb_widget_bitmap(uint8_t serial_id, proto_t *proto);
+void cb_widget_clear(uint8_t serial_id, proto_t *proto);
 
 /*
 ************************************************************************************************************************

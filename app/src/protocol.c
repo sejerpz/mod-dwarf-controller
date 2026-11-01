@@ -25,6 +25,7 @@
 #include "mode_tools.h"
 #include "mode_builder.h"
 #include "system.h"
+#include "widget_area.h"
 
 uint8_t g_screenshot = 0;
 
@@ -308,6 +309,8 @@ void protocol_init(void)
     protocol_add_command(CMD_GLCD_TEXT, cb_glcd_text);
     protocol_add_command(CMD_GLCD_DIALOG, cb_glcd_dialog);
     protocol_add_command(CMD_GLCD_DRAW, cb_glcd_draw);
+    protocol_add_command(CMD_WIDGET_AREA_ADD, cb_widget_area_add);
+    protocol_add_command(CMD_WIDGET_AREA_REMOVE, cb_widget_area_remove);
     protocol_add_command(CMD_GUI_CONNECTED, cb_gui_connection);
     protocol_add_command(CMD_GUI_DISCONNECTED, cb_gui_connection);
     protocol_add_command(CMD_CONTROL_ADD, cb_control_add);
@@ -338,6 +341,8 @@ void protocol_init(void)
     protocol_add_command(CMD_SYS_CHANGE_VALUE, cb_change_assigment_value);
     protocol_add_command(CMD_SYS_CHANGE_WIDGET_INDICATOR, cb_change_widget_indicator);
     protocol_add_command(CMD_SYS_LAUNCH_POPUP, cb_launch_popup);
+    protocol_add_command(CMD_SYS_WIDGET_BITMAP, cb_widget_bitmap);
+    protocol_add_command(CMD_SYS_WIDGET_CLEAR, cb_widget_clear);
     protocol_add_command(CMD_RESET_EEPROM, cb_clear_eeprom);
     protocol_add_command(CMD_SYS_COMP_PEDALBOARD_GAIN, cb_set_pb_gain);
     protocol_add_command(CMD_SCREENSHOT, cb_screenshot);
@@ -662,6 +667,30 @@ void cb_change_widget_indicator(uint8_t serial_id, proto_t *proto)
     protocol_send_response(CMD_RESPONSE, 0, proto);
 }
 
+// bitmaps for an area that is not in view are dropped without complaint: the plugin may still be drawing
+// the page the user just left, and it redraws everything when the area is in view again
+void cb_widget_bitmap(uint8_t serial_id, proto_t *proto)
+{
+    if (serial_id != SYSTEM_SERIAL)
+        return;
+
+    WA_draw(atoi(proto->list[2]), atoi(proto->list[3]), atoi(proto->list[4]),
+            atoi(proto->list[5]), atoi(proto->list[6]), proto->list[7]);
+
+    protocol_send_response(CMD_RESPONSE, 0, proto);
+}
+
+void cb_widget_clear(uint8_t serial_id, proto_t *proto)
+{
+    if (serial_id != SYSTEM_SERIAL)
+        return;
+
+    WA_draw(atoi(proto->list[2]), atoi(proto->list[3]), atoi(proto->list[4]),
+            atoi(proto->list[5]), atoi(proto->list[6]), NULL);
+
+    protocol_send_response(CMD_RESPONSE, 0, proto);
+}
+
 void cb_launch_popup(uint8_t serial_id, proto_t *proto)
 {
     if (serial_id != SYSTEM_SERIAL)
@@ -766,6 +795,43 @@ void cb_glcd_draw(uint8_t serial_id, proto_t *proto)
 
     str_to_hex(proto->list[4], msg_buffer, WEBGUI_COMM_RX_BUFF_SIZE);
     glcd_draw_image(hardware_glcds(glcd_id), x, y, msg_buffer, GLCD_BLACK);
+
+    protocol_send_response(CMD_RESPONSE, 0, proto);
+}
+
+// the control screen changes under a widget area that comes or goes, so it is printed again
+static void reprint_control_screen(void)
+{
+    if (naveg_get_current_mode() == MODE_CONTROL && !hardware_get_overlay_counter())
+        CM_print_screen();
+}
+
+void cb_widget_area_add(uint8_t serial_id, proto_t *proto)
+{
+    UNUSED_PARAM(serial_id);
+
+    const glcd_rect_t rect = {
+        atoi(proto->list[4]), atoi(proto->list[5]), atoi(proto->list[6]), atoi(proto->list[7])
+    };
+
+    if (!WA_add(atoi(proto->list[3]), atoi(proto->list[1]), atoi(proto->list[2]), &rect))
+    {
+        protocol_send_response(CMD_RESPONSE, INVALID_ARGUMENT, proto);
+        return;
+    }
+
+    reprint_control_screen();
+
+    protocol_send_response(CMD_RESPONSE, 0, proto);
+}
+
+void cb_widget_area_remove(uint8_t serial_id, proto_t *proto)
+{
+    UNUSED_PARAM(serial_id);
+
+    WA_remove(atoi(proto->list[1]));
+
+    reprint_control_screen();
 
     protocol_send_response(CMD_RESPONSE, 0, proto);
 }
