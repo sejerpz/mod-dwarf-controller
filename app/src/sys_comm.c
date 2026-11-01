@@ -120,6 +120,12 @@ void sys_comm_send(const char *command, const char *arguments)
     char buffer[40];
     memset(buffer, 0, sizeof buffer);
 
+    // A command, not a response: the wait for its answer starts before the bytes leave. Raised after
+    // sending, the flag could go up only once the answer had already come and cleared it -- the system
+    // task outranks every caller and answers in between when it is busy -- and the wait never ends.
+    if (strncmp(command, "r ", 2) != 0)
+        g_system_blocked = 1;
+
     //copy command
     uint8_t i = copy_command(buffer, command); 
 
@@ -173,9 +179,9 @@ void sys_comm_response_cb(void *data)
     g_system_blocked = 0;
 }
 
+// the flag went up when the command was sent, see sys_comm_send()
 void sys_comm_wait_response(void)
 {
-    g_system_blocked = 1;
     while (g_system_blocked);
 }
 
