@@ -401,7 +401,8 @@ void screen_encoder(const control_t *control, uint8_t encoder)
 
     //fist decide posistion
     uint8_t encoder_x;
-    uint8_t encoder_y = 16;
+    // the builder keeps its frame; on the control screen the box sits in the middle of the taller one
+    uint8_t encoder_y = (naveg_get_current_mode() == MODE_BUILDER) ? 16 : SCREEN_ENCODER_Y;
     switch(encoder)
     {
         case 0:
@@ -639,6 +640,8 @@ static void screen_encoder_containers(uint8_t mode, uint8_t current_page, uint8_
 {
     glcd_t *display = hardware_glcds(0);
 
+    if (mode == 1)
+    {
     //clear the part
     glcd_rect_fill(display, 0, 12, DISPLAY_WIDTH, 38, GLCD_WHITE);
     //clear the part of the small boxes below
@@ -653,8 +656,6 @@ static void screen_encoder_containers(uint8_t mode, uint8_t current_page, uint8_
     glcd_hline(display, 0,  47, 31, GLCD_BLACK);
     glcd_hline(display, 97, 47, 31, GLCD_BLACK);
 
-    if (mode == 1)
-    {
         char buffer[10];
         int len;
 
@@ -677,47 +678,38 @@ static void screen_encoder_containers(uint8_t mode, uint8_t current_page, uint8_
         glcd_rect(display, 31, 43, 66, 9, GLCD_BLACK);
         // current page indicator
         glcd_text(display, (DISPLAY_WIDTH / 2) - (3 * len) + 7, 45, buffer, Terminal3x5, GLCD_BLACK);
+        return;
     }
-    else
+
+    // Three subpages. The frame spans rows 11 to 49 and the subpage is shown by three small marks hanging
+    // from its bottom edge, the current one filled: the columns above get the rows the I / II / III boxes
+    // used to take, which is the room plugin widgets draw in. Row 50 stays blank outside the marks, so the
+    // frame does not run into the page index box below.
+
+    //clear the part, the blank row below it, and what the boxes of the builder left there
+    glcd_rect_fill(display, 0, 10, DISPLAY_WIDTH, 41, GLCD_WHITE);
+    glcd_rect_fill(display, 31, 51, 66, 1, GLCD_WHITE);
+
+    //the frame
+    glcd_hline(display, 0, 11, DISPLAY_WIDTH, GLCD_BLACK);
+    glcd_vline(display, 0, 11, 39, GLCD_BLACK);
+    glcd_vline(display, DISPLAY_WIDTH - 1, 11, 39, GLCD_BLACK);
+
+    //its bottom edge, open where the marks are
+    glcd_hline(display, 0, 49, 51, GLCD_BLACK);
+    glcd_hline(display, 77, 49, 51, GLCD_BLACK);
+
+    //the marks, 6x3 with 2 pixels between them, centred, hanging from the edge so that the columns
+    //above keep every row down to it
+    uint8_t i;
+    for (i = 0; i < 3; i++)
     {
-        //draw the 3 boxes
-        glcd_rect(display, 31, 43, 21, 9, GLCD_BLACK);
-        glcd_rect(display, 54, 43, 21, 9, GLCD_BLACK);
-        glcd_rect(display, 77, 43, 21, 9, GLCD_BLACK);
+        const uint8_t x = 53 + i * 8;
 
-        //draw the devision lines between boxes
-        glcd_hline(display, 52, 47, 2, GLCD_BLACK);
-        glcd_hline(display, 75, 47, 2, GLCD_BLACK);
-
-        // three subpages mode
-        //indicator 1
-        glcd_text(display, 40, 45, "I", Terminal3x5, GLCD_BLACK);
-
-        //indicator 2
-        glcd_text(display, 61, 45, "II", Terminal3x5, GLCD_BLACK);
-
-        //indicator 3
-        glcd_text(display, 82, 45, "III", Terminal3x5, GLCD_BLACK);
-
-        //invert the current one
-        switch (current_page)
-        {
-            case 0:
-                glcd_rect_invert(display, 32, 44, 19, 7);
-            break;
-
-            case 1:
-                glcd_rect_invert(display, 55, 44, 19, 7);
-            break;
-
-            case 2:
-                glcd_rect_invert(display, 78, 44, 19, 7);;
-            break;
-
-            default:
-                glcd_rect_invert(display, 32, 44, 19, 7);
-            break;
-        }
+        if (i == current_page)
+            glcd_rect_fill(display, x, 49, 6, 3, GLCD_BLACK);
+        else
+            glcd_rect(display, x, 49, 6, 3, GLCD_BLACK);
     }
 }
 
