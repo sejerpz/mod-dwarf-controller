@@ -16,6 +16,7 @@
 #include "mode_tools.h"
 #include "mode_navigation.h"
 #include "system.h"
+#include "widget_area.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -425,6 +426,11 @@ void screen_encoder(const control_t *control, uint8_t encoder)
     //clear the designated area
     glcd_rect_fill(display, encoder_x, encoder_y, 36, 27, GLCD_WHITE);
 
+    //a plugin widget draws here instead
+    const glcd_rect_t encoder_rect = { encoder_x, encoder_y, 36, 27 };
+    if (WA_paint(&encoder_rect))
+        return;
+
     //check what control type we need
 
     //no control
@@ -634,6 +640,10 @@ void screen_page_index(uint8_t current, uint8_t available)
 
     // draws the text field
     glcd_text(display, 3, 56, str_current, Terminal5x7, GLCD_BLACK);
+
+    //a plugin widget spanning the display covers the page index
+    const glcd_rect_t index_rect = { 0, 51, 24, 13 };
+    WA_paint(&index_rect);
 }
 
 static void screen_encoder_containers(uint8_t mode, uint8_t current_page, uint8_t page_count)
@@ -642,19 +652,19 @@ static void screen_encoder_containers(uint8_t mode, uint8_t current_page, uint8_
 
     if (mode == 1)
     {
-    //clear the part
-    glcd_rect_fill(display, 0, 12, DISPLAY_WIDTH, 38, GLCD_WHITE);
-    //clear the part of the small boxes below
-    glcd_rect_fill(display, 31, 46, 66, 5, GLCD_WHITE);
+        //clear the part
+        glcd_rect_fill(display, 0, 12, DISPLAY_WIDTH, 38, GLCD_WHITE);
+        //clear the part of the small boxes below
+        glcd_rect_fill(display, 31, 46, 66, 5, GLCD_WHITE);
 
-    //draw the 3 main lines 
-    glcd_hline(display, 0, 13, DISPLAY_WIDTH, GLCD_BLACK);
-    glcd_vline(display, 0, 13, 34, GLCD_BLACK);
-    glcd_vline(display, DISPLAY_WIDTH - 1, 13, 34, GLCD_BLACK);
-  
-    //draw the bottom lines
-    glcd_hline(display, 0,  47, 31, GLCD_BLACK);
-    glcd_hline(display, 97, 47, 31, GLCD_BLACK);
+        //draw the 3 main lines
+        glcd_hline(display, 0, 13, DISPLAY_WIDTH, GLCD_BLACK);
+        glcd_vline(display, 0, 13, 34, GLCD_BLACK);
+        glcd_vline(display, DISPLAY_WIDTH - 1, 13, 34, GLCD_BLACK);
+
+        //draw the bottom lines
+        glcd_hline(display, 0,  47, 31, GLCD_BLACK);
+        glcd_hline(display, 97, 47, 31, GLCD_BLACK);
 
         char buffer[10];
         int len;
@@ -674,7 +684,7 @@ static void screen_encoder_containers(uint8_t mode, uint8_t current_page, uint8_
             // somethig went wrong with snprintf
             strcpy(buffer, "err");
         }
-      
+
         glcd_rect(display, 31, 43, 66, 9, GLCD_BLACK);
         // current page indicator
         glcd_text(display, (DISPLAY_WIDTH / 2) - (3 * len) + 7, 45, buffer, Terminal3x5, GLCD_BLACK);
@@ -720,6 +730,9 @@ static void screen_encoder_containers(uint8_t mode, uint8_t current_page, uint8_
 void screen_encoder_container(uint8_t current_encoder_page)
 {
     screen_encoder_containers(0, current_encoder_page, 3);
+
+    //the containers run under the widget areas, which go back on top
+    WA_paint(NULL);
 }
 
 /*
@@ -774,6 +787,16 @@ void screen_footer(uint8_t foot_id, const char *name, const char *value, int16_t
         glcd_vline(display, foot_x, foot_y, 10, GLCD_BLACK);
         glcd_vline(display, foot_x+50, foot_y, 10, GLCD_BLACK);
     }
+
+    //a plugin widget draws here instead
+    glcd_rect_t foot_rect = { foot_x, foot_y, (foot_id == 0) ? 53 : 51, 10 };
+    if (g_foots_grouped && (naveg_get_current_mode() == MODE_CONTROL))
+    {
+        foot_rect.x = 24;
+        foot_rect.width = 104;
+    }
+    if (WA_paint(&foot_rect))
+        return;
 
     if (name == NULL || value == NULL)
     {
@@ -934,6 +957,10 @@ void screen_tittle(int8_t pb_ss)
     title_icons(display);
     //invert the top bar
     glcd_rect_invert(display, 0, 0, DISPLAY_WIDTH, 9);
+
+    //a plugin widget spanning the display covers the title
+    const glcd_rect_t title_rect = { 0, 0, DISPLAY_WIDTH, 9 };
+    WA_paint(&title_rect);
 }
 
 void screen_bank_list(bp_list_t *list, const char *name)

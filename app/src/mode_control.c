@@ -29,6 +29,7 @@
 #include "mode_control.h"
 #include "mode_tools.h"
 #include "system.h"
+#include "widget_area.h"
 
 
 //reset actuator queue
@@ -80,6 +81,9 @@ uint8_t g_scroll_dir = 1;
 
 static uint8_t g_current_foot_control_page = 0;
 static uint8_t g_current_encoder_page = 0;
+
+// what screen_encoder_container() draws again: the frame and the columns, down to the subpage marks
+static const glcd_rect_t g_encoder_containers_rect = { 0, 10, DISPLAY_WIDTH, 42 };
 static uint8_t g_fs_page_available[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 static uint8_t g_available_foot_pages = 0;
 static int8_t g_current_overlay_actuator = -1;
@@ -263,6 +267,9 @@ static void load_control_page(uint8_t page)
 
     hardware_force_overlay_off(1);
     g_current_overlay_actuator = -1;
+
+    //a new page always opens on the first subpage; the whole screen is printed again below
+    WA_set_screen(page, 0, NULL);
 
     uint8_t i = copy_command(buffer, CMD_NEXT_PAGE);
     i += int_to_str(page, &buffer[i], sizeof(buffer) - i, 0);
@@ -1779,6 +1786,7 @@ void CM_reset_page(void)
 {
     g_current_foot_control_page = 0;
     g_current_encoder_page = 0;
+    WA_set_screen(0, 0, NULL);
 }
 
 /*
@@ -1831,7 +1839,13 @@ void CM_load_next_encoder_page(uint8_t button)
     g_current_overlay_actuator = -1;
 
     g_current_encoder_page = button;
-    screen_encoder_container(g_current_encoder_page);
+
+    //only the encoder containers change with the subpage, unless a widget area that comes or goes, a full
+    //screen one, covers the rest of the screen too
+    if (WA_set_screen(g_current_foot_control_page, g_current_encoder_page, &g_encoder_containers_rect))
+        CM_print_screen();
+    else
+        screen_encoder_container(g_current_encoder_page);
 
     //clear controls
     uint8_t q;
@@ -2094,6 +2108,20 @@ void CM_print_screen(void)
 
 void CM_print_control_overlay(control_t *control, uint16_t overlay_time)
 {
+    // The box or footer of the actuator, as screen_encoder() and screen_footer() draw them. When a plugin
+    // widget covers it the overlay would only get in the way of the widget, so it is left out: the control
+    // keeps working, the widget is what shows.
+    static const glcd_rect_t actuator_rects[] = {
+        { 4, SCREEN_ENCODER_Y, 36, 27 }, { 47, SCREEN_ENCODER_Y, 36, 27 }, { 90, SCREEN_ENCODER_Y, 36, 27 },
+        { 24, 54, 53, 10 }, { 77, 54, 51, 10 },
+    };
+    const glcd_rect_t foots_rect = { 24, 54, 104, 10 };
+    const glcd_rect_t *actuator_rect = control->hw_id < sizeof(actuator_rects) / sizeof(actuator_rects[0])
+                                     ? &actuator_rects[control->hw_id] : &foots_rect;
+
+    if (WA_covers(actuator_rect))
+        return;
+
     g_current_overlay_actuator = control->hw_id;
 
     screen_control_overlay(control);
@@ -2142,10 +2170,14 @@ void CM_set_pages_available(uint8_t page_toggles[8])
 void CM_reset_encoder_page(void)
 {
     g_current_encoder_page = 0;
+    const uint8_t full_redraw = WA_set_screen(g_current_foot_control_page, 0, &g_encoder_containers_rect);
 
     if (naveg_get_current_mode() == MODE_CONTROL)
     {
-        screen_encoder_container(g_current_encoder_page);
+        if (full_redraw)
+            CM_print_screen();
+        else
+            screen_encoder_container(g_current_encoder_page);
 
         //update LED's
         set_encoder_pages_led_state();  
