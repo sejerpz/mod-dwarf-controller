@@ -63,7 +63,8 @@ static uint8_t is_in_view(const widget_area_t *area)
 // pixels only reach the display on the control screen, never under an overlay
 static uint8_t can_paint(void)
 {
-    return naveg_get_current_mode() == MODE_CONTROL && hardware_get_overlay_counter() == 0;
+    // not before boot: the logo stays until the control view is printed
+    return g_device_booted && naveg_get_current_mode() == MODE_CONTROL && hardware_get_overlay_counter() == 0;
 }
 
 static void update_buffer(widget_area_t *area)
