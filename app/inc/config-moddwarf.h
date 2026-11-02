@@ -236,6 +236,7 @@ enum {ENCODER0, ENCODER1, ENCODER2, FOOTSWITCH0, FOOTSWITCH1, FOOTSWITCH2, BUTTO
 #define SHIFT_ITEMS_ID      (20 * 10)
 #define APPEARANCE_SET_ID   (21 * 10)
 #define CONTROLLER_SET_ID   (22 * 10)
+#define WEB_UI_SET_ID       (24 * 10)
 
 #define INP_STEREO_LINK         AUDIO_INP_ID+1
 #define INP_1_GAIN_ID           AUDIO_INP_ID+2
@@ -271,6 +272,8 @@ enum {ENCODER0, ENCODER1, ENCODER2, FOOTSWITCH0, FOOTSWITCH1, FOOTSWITCH2, BUTTO
 #define DEFAULT_TOOL_ID         CONTROLLER_SET_ID+1
 #define KNOB_LIST_ID            CONTROLLER_SET_ID+2
 #define MENU_BUTTON_TOGGLE_ID   CONTROLLER_SET_ID+3
+
+#define WEB_UI_ID               WEB_UI_SET_ID+1
 
 #define USB_MODE_ID             SYSTEM_SET_ID+1
 #define NOSIE_REMOVAL_ID        SYSTEM_SET_ID+2
@@ -351,6 +354,8 @@ enum {ENCODER0, ENCODER1, ENCODER2, FOOTSWITCH0, FOOTSWITCH1, FOOTSWITCH2, BUTTO
     {"WIFI IP",                         MENU_LIST,      WIFI_IP_ID,             WIFI_ID,            system_wifi_ip_cb           , 0},  \
     {"ACCESS POINT",                    MENU_CLICK_LIST,WIFI_AP_ID,             WIFI_ID,            system_wifi_ap_cb           , 0},  \
     {"AP STATUS",                       MENU_LIST,      WIFI_AP_STATUS_ID,      WIFI_ID,            NULL                        , 0},  \
+    {"WEB INTERFACE",                   MENU_MAIN,      WEB_UI_SET_ID,          ROOT_ID,            NULL                        , 0},  \
+    {"INTERFACE",                       MENU_CLICK_LIST,WEB_UI_ID,              WEB_UI_SET_ID,      system_web_ui_cb            , 0},  \
     {"BlUETOOTH",                       MENU_CONFIRM,   BLUETOOTH_ID,           ROOT_ID,            system_bluetooth_cb         , 1},  \
     {"INFO",                            MENU_OK,        INFO_ID,                ROOT_ID,            system_info_cb              , 0},  \
     {"SYSTEM UPGRADE",                  MENU_CONFIRM,   UPDATE_ID,              ROOT_ID,            system_upgrade_cb           , 0},  \
@@ -371,6 +376,7 @@ enum {ENCODER0, ENCODER1, ENCODER2, FOOTSWITCH0, FOOTSWITCH1, FOOTSWITCH2, BUTTO
     {USER_PROFILE_ID+2, "SAVE USER PROFILE", "\n\nsave current settings as user profile "}, \
     {USB_MODE_ID, "Change USB mode", "\n\nChanging USB modes requires a device reboot\n\nreboot now?"},  \
     {NOSIE_REMOVAL_ID, "Gndloop compensation", "THIS SETTING REDUCES THE\nAMOUNT OF NOISE INTRODUCED\nBY GROUND LOOPS\n\nENABLING IT SLIGHTLY REDUCES\nTHE AMOUNT OF AVAILABLE CPU\nPOWER"},  \
+    {WEB_UI_ID, "Web interface", "\nSwitch the web interface\nback to the default one?\n\nThe web interface restarts,\nthe pedalboard keeps playing."},  \
     {BLUETOOTH_ID, "Enable Bluetooth", "\nEnable Bluetooth discovery\nmode for 2 minutes?"},  \
     {WIFI_AP_ID, "WiFi access point", "\nThe WiFi connection drops for\na few seconds while the\naccess point is switched.\n\nswitch it now?"},  \
     {INFO_ID, "Device Info", "\nCurrent Release:\n"},  \

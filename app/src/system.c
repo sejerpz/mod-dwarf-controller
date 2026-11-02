@@ -121,6 +121,8 @@ int8_t g_usb_mode = -1;
 int8_t g_noise_removal_mode = -1;
 int8_t g_shift_mode = -1;
 int16_t g_audio_frame_size = -1;
+// web interface in use, as uic answers: 1 the default one, 2 another one
+int8_t g_web_ui = -1;
 
 /*
 ************************************************************************************************************************
@@ -2753,6 +2755,83 @@ void system_audio_frame_size_cb(void *arg, int event)
     {
         case 128: item->data.unit_text = "128"; break;
         case 256: item->data.unit_text = "256"; break;
+        default: item->data.unit_text = ":("; break;
+    }
+}
+
+void system_web_ui_cb(void *arg, int event)
+{
+    menu_item_t *item = arg;
+    char buffer[10];
+    uint8_t i;
+
+    item->data.min = 1;
+    item->data.step = 1;
+    item->data.list_count = 2;
+
+    // ask every time the page is drawn: the interface can be switched from the browser meanwhile
+    if ((event == MENU_EV_NONE) && !item->data.popup_active)
+    {
+        item->data.value = 1;
+        i = copy_command(buffer, CMD_UI_CONFIG);
+        i += int_to_str(0, &buffer[i], sizeof(buffer) - i, 0);
+        buffer[i] = 0;
+
+        ui_comm_webgui_set_response_cb(recieve_web_value, item);
+        ui_comm_webgui_send(buffer, i);
+        ui_comm_webgui_wait_response();
+
+        g_web_ui = (int8_t)item->data.value;
+        item->data.selected = g_web_ui;
+        item->data.hover = 1;
+    }
+
+    // only the way back to the default one, from another one
+    item->data.max = (g_web_ui == 2) ? 2 : 1;
+
+    //if clicked and YES was selected from the pop-up
+    if ((event == MENU_EV_ENTER) && (item->data.hover == 0))
+    {
+        if (((int)item->data.value == 1) && (g_web_ui == 2))
+        {
+            i = copy_command(buffer, CMD_UI_CONFIG);
+            i += int_to_str(1, &buffer[i], sizeof(buffer) - i, 0);
+            buffer[i] = 0;
+
+            ui_comm_webgui_set_response_cb(NULL, NULL);
+            ui_comm_webgui_send(buffer, i);
+            ui_comm_webgui_wait_response();
+
+            g_web_ui = 1;
+            item->data.selected = g_web_ui;
+            item->data.value = g_web_ui;
+
+            naveg_wait_for_ui();
+            return;
+        }
+
+        item->data.selected = g_web_ui;
+        item->data.value = g_web_ui;
+    }
+    //cancel, reset widget
+    else if (event == MENU_EV_ENTER)
+    {
+        item->data.selected = g_web_ui;
+        item->data.value = g_web_ui;
+    }
+
+    if (item->data.popup_active)
+        return;
+
+    if ((event == MENU_EV_UP) && (item->data.value < item->data.max))
+        item->data.value++;
+    else if ((event == MENU_EV_DOWN) && (item->data.value > item->data.min))
+        item->data.value--;
+
+    switch ((int)item->data.value)
+    {
+        case 1: item->data.unit_text = "DEFAULT"; break;
+        case 2: item->data.unit_text = "CUSTOM"; break;
         default: item->data.unit_text = ":("; break;
     }
 }
