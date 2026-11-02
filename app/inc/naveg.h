@@ -88,6 +88,7 @@ void naveg_update_single_shift_item(uint8_t shift_item_id, int16_t item_id);
 void naveg_update_shift_screen(void);
 void naveg_turn_off_leds(void);
 void naveg_ui_connection(uint8_t status);
+void naveg_wait_for_ui(void);
 uint8_t naveg_ui_status(void);
 void naveg_enc_enter(uint8_t encoder);
 void naveg_enc_released(uint8_t encoder);

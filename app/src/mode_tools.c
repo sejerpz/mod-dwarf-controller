@@ -472,6 +472,10 @@ static void menu_change_value(uint8_t encoder, uint8_t action)
     if (item->desc->action_cb && !item->data.popup_active)
         item->desc->action_cb(item, action);
 
+    // the action left the menu, e.g. waiting for the web interface to restart
+    if (naveg_get_current_mode() != MODE_TOOL_MENU)
+        return;
+
     if ((item->desc->id != ROOT_ID) && (item->desc->id != UPDATE_ID) && (item->desc->id != DIALOG_ID) && (item->desc->id != BLUETOOTH_ID) && (item->desc->id != INFO_ID))
         screen_menu_page(g_current_menu);
     else

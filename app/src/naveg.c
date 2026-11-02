@@ -18,6 +18,7 @@
 #include "mode_popup.h"
 #include "mode_tools.h"
 #include "mode_builder.h"
+#include "images.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -428,6 +429,20 @@ void naveg_ui_connection(uint8_t status)
             //no action needed
         break;
     }
+}
+
+// the web interface is restarting: show the logo, as at start up, and ignore the controls
+// until it sends boot again, which prints the control view
+void naveg_wait_for_ui(void)
+{
+    g_device_booted = false;
+
+    TM_reset_menu();
+    naveg_turn_off_leds();
+    g_device_mode = MODE_CONTROL;
+
+    screen_clear();
+    screen_image(0, dwarf_logo);
 }
 
 uint8_t naveg_ui_status(void)
