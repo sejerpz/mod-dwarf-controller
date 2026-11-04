@@ -542,7 +542,7 @@ static void wifi_read_status(void)
     char status[LINE_BUFFER_SIZE + 1] = {};
 
     // the response buffer is reused by the next cli command: copy it
-    const char *response = cli_command("wifi-ap status", CLI_RETRIEVE_RESPONSE);
+    const char *response = cli_command_wait("wifi-ap status", CLI_WIFI_RESPONSE_TIMEOUT);
     if (response)
         strncpy(status, response, sizeof(status) - 1);
 
@@ -672,8 +672,8 @@ void system_wifi_ap_cb(void *arg, int event)
         if ((int)item->data.value != item->data.selected)
         {
             // runs in background, the page shows STARTING/STOPPING
-            cli_command(((int)item->data.value == 1) ? "wifi-ap on -b" : "wifi-ap off -b",
-                        CLI_RETRIEVE_RESPONSE);
+            cli_command_wait(((int)item->data.value == 1) ? "wifi-ap on -b" : "wifi-ap off -b",
+                             CLI_WIFI_RESPONSE_TIMEOUT);
             item->data.selected = item->data.value;
             wifi_read_status();
         }

@@ -600,7 +600,7 @@ void TM_update_menu(void)
 
         (*g_update_cb)(item, MENU_EV_NONE);
 
-        //the callback can wait for the cli (WIFI page, ~100 ms): the buttons,
+        //the callback can wait for the cli (WIFI page, up to 1 s): the buttons,
         //handled by a higher priority task, can change the menu meanwhile
         if (!update_on_screen(item, page))
             return;
