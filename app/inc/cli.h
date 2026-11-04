@@ -71,6 +71,8 @@ void cli_init(void);
 void cli_process(void);
 // execute a single command and return its response if asked for (maximum LINE_BUFFER_SIZE+1 bytes)
 const char* cli_command(const char *command, uint8_t response_action);
+// the same with CLI_RETRIEVE_RESPONSE, for commands slower than CLI_RESPONSE_TIMEOUT
+const char* cli_command_wait(const char *command, uint32_t timeout_ms);
 // execute systemctl command and return its status if any
 const char* cli_systemctl(const char *command, const char *service);
 // request package version information
