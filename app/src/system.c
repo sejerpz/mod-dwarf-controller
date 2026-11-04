@@ -507,6 +507,9 @@ static volatile uint8_t g_wifi_check_requested = 0;
 // list values are shown on 2 lines of max 9 chars, split at the first space
 static char g_wifi_ip_text[20];
 static char g_wifi_status_text[20];
+// reads without an answer in a row, N/A on the page only from WIFI_MAX_TIMEOUTS
+#define WIFI_MAX_TIMEOUTS 3
+static uint8_t g_wifi_timeouts = 0;
 
 // "192.168.0.151" -> "192.168. 0.151" (2 lines)
 static void wifi_set_ip_text(const char *ip)
@@ -537,15 +540,8 @@ static void wifi_set_ap_text(menu_item_t *item)
         item->data.unit_text = ((int)item->data.value == 1) ? "ON" : "OFF";
 }
 
-static void wifi_read_status(void)
+static void wifi_parse_status(char *status)
 {
-    char status[LINE_BUFFER_SIZE + 1] = {};
-
-    // the response buffer is reused by the next cli command: copy it
-    const char *response = cli_command_wait("wifi-ap status", CLI_WIFI_RESPONSE_TIMEOUT);
-    if (response)
-        strncpy(status, response, sizeof(status) - 1);
-
     // split "<word> <arg1> <arg2> <arg3>"
     char *args[3] = {};
     char *p = status;
@@ -613,6 +609,23 @@ static void wifi_read_status(void)
         g_wifi_icon = (strcmp(args[0], "none") == 0) ? WIFI_ICON_DISCONNECTED : WIFI_ICON_CONNECTED;
     else if (g_wifi_state == WIFI_NO_DEVICE || g_wifi_state == WIFI_UNKNOWN)
         g_wifi_icon = WIFI_ICON_NONE;
+}
+
+static void wifi_read_status(void)
+{
+    char status[LINE_BUFFER_SIZE + 1] = {};
+
+    // the response buffer is reused by the next cli command: copy it
+    const char *response = cli_command_wait("wifi-ap status", CLI_WIFI_RESPONSE_TIMEOUT);
+    if (response)
+    {
+        strncpy(status, response, sizeof(status) - 1);
+        g_wifi_timeouts = 0;
+    }
+
+    // no answer in time on a busy system: keep the last state for a while
+    if (response || g_wifi_state == WIFI_UNKNOWN || ++g_wifi_timeouts >= WIFI_MAX_TIMEOUTS)
+        wifi_parse_status(status);
 
     menu_item_t *item = TM_get_menu_item_by_ID(WIFI_IP_ID);
     if (item)
