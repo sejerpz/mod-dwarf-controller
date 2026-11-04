@@ -368,6 +368,9 @@ void cli_process(void)
 
 const char* cli_command(const char *command, uint8_t response_action)
 {
+    // a response arrived just after the timeout of the previous command
+    xSemaphoreTake(g_response_sem, 0);
+
     g_cli.waiting_response = (response_action == CLI_RETRIEVE_RESPONSE ? 1 : 0);
 
     // default response
