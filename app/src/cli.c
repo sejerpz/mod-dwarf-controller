@@ -366,7 +366,7 @@ void cli_process(void)
     }
 }
 
-const char* cli_command(const char *command, uint8_t response_action)
+static const char* send_command(const char *command, uint8_t response_action, portTickType timeout)
 {
     // a response arrived just after the timeout of the previous command
     xSemaphoreTake(g_response_sem, 0);
@@ -388,7 +388,7 @@ const char* cli_command(const char *command, uint8_t response_action)
     // take semaphore to wait for response
     if (response_action == CLI_RETRIEVE_RESPONSE)
     {
-        if (xSemaphoreTake(g_response_sem, RESPONSE_TIMEOUT) == pdTRUE)
+        if (xSemaphoreTake(g_response_sem, timeout) == pdTRUE)
         {
             g_cli.waiting_response = 0;
             return g_cli.response;
@@ -397,6 +397,16 @@ const char* cli_command(const char *command, uint8_t response_action)
 
     g_cli.waiting_response = 0;
     return NULL;
+}
+
+const char* cli_command(const char *command, uint8_t response_action)
+{
+    return send_command(command, response_action, RESPONSE_TIMEOUT);
+}
+
+const char* cli_command_wait(const char *command, uint32_t timeout_ms)
+{
+    return send_command(command, CLI_RETRIEVE_RESPONSE, timeout_ms / portTICK_RATE_MS);
 }
 
 const char* cli_systemctl(const char *command, const char *service)
