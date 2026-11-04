@@ -191,6 +191,8 @@ enum {ENCODER0, ENCODER1, ENCODER2, FOOTSWITCH0, FOOTSWITCH1, FOOTSWITCH2, BUTTO
 #define CLI_SERIAL                  1
 // defines how much time wait for console response (in milliseconds)
 #define CLI_RESPONSE_TIMEOUT        200
+// wifi-ap takes about 100 ms on an idle device, 200 ms and more with a heavy pedalboard
+#define CLI_WIFI_RESPONSE_TIMEOUT   1000
 
 // refresh period of the menu items with need_update (ms)
 #define MENU_UPDATE_INTERVAL        1000
