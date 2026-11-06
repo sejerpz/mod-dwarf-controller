@@ -567,10 +567,12 @@ static void foot_control_rm(uint8_t hw_id)
 
     for (i = 0; i < MAX_FOOT_ASSIGNMENTS; i++)
     {
-        // if there is no controls assigned, load the default screen
-        if ((!g_foots[i]) && (naveg_get_current_mode() == MODE_CONTROL))
+        // if there is no controls assigned, load the default screen (in the control mode only, the others draw
+        // their own footer) and go on: there is nothing to compare
+        if (!g_foots[i])
         {
-            screen_footer(i, NULL, NULL, 0);
+            if (naveg_get_current_mode() == MODE_CONTROL)
+                screen_footer(i, NULL, NULL, 0);
             continue;
         }
 
