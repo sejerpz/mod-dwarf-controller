@@ -1895,6 +1895,10 @@ void CM_set_state(void)
 
 void CM_set_foot_led(control_t *control, uint8_t update_led)
 {
+    // a footswitch with no assignment: its led was turned off by the caller
+    if (!control)
+        return;
+
     ledz_t *led = hardware_leds(control->hw_id - ENCODERS_COUNT);
 
     if (ledz_color_valid(MAX_COLOR_ID + control->hw_id-ENCODERS_COUNT+1))
