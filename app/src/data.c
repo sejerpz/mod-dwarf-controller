@@ -247,7 +247,6 @@ void data_free_banks_list(bp_list_t *bp_list)
         FREE(bp_list->bp_flag);
     }
 
-    FREE(bp_list->bp_flag);
     FREE(bp_list);
     return;
 }
