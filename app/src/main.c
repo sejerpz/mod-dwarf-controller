@@ -519,7 +519,7 @@ void reset_queue(void)
 /**
  * Crash stack analisys
  */
-void HardFault_Analisys(uint32_t *stack_frame) {
+static void fault_screen(uint32_t *stack_frame, uint8_t in_task) {
     //uint32_t r0  = stack_frame[0];
     //uint32_t r1  = stack_frame[1];
     //uint32_t r2  = stack_frame[2];
@@ -558,7 +558,7 @@ void HardFault_Analisys(uint32_t *stack_frame) {
         glcd_text(glcd0, 93, 51, buffer, NULL, GLCD_BLACK);
     }
 
-    if ((uint32_t)stack_frame == __get_PSP()) {
+    if (in_task) {
         current_task = xTaskGetCurrentTaskHandle();
         if (current_task != NULL) {
             glcd_text(glcd0, 0, 59, pcTaskGetName(current_task), NULL, GLCD_BLACK);
@@ -593,26 +593,29 @@ void HardFault_Analisys(uint32_t *stack_frame) {
     //SCB->AIRCR = (0x05FA << SCB_AIRCR_VECTKEY_Pos) | SCB_AIRCR_SYSRESETREQ_Msk;
 }
 
-/**
- * HardFault_Handler
- */
-__attribute__((naked)) void HardFault_Handler(void) {
-    uint32_t lr_val;
-    uint32_t *stack_ptr;
-
-    __asm volatile ("MOV %0, LR" : "=r" (lr_val));
-    if (lr_val & 0x04) {
-        stack_ptr = (uint32_t *)__get_PSP();
-    } else {
-        stack_ptr = (uint32_t *)__get_MSP();
-    }
-
-    HardFault_Analisys(stack_ptr);
+// reached only from the asm of HardFault_Handler
+__attribute__((used, noreturn)) void HardFault_Analisys(uint32_t *stack_frame) {
+    // a task runs on the process stack, the kernel and the IRQs on the main one
+    fault_screen(stack_frame, (uint32_t)stack_frame == __get_PSP());
 
     ledz_on(hardware_leds(0), RED);
     hardware_glcd_brightness(MAX_BRIGHTNESS);
 
     while(1);
+}
+
+/**
+ * HardFault_Handler
+ */
+// naked: no prologue may touch the stack before the frame pointer is picked
+__attribute__((naked)) void HardFault_Handler(void) {
+    __asm volatile (
+        "tst lr, #4             \n"
+        "ite eq                 \n"
+        "mrseq r0, msp          \n"
+        "mrsne r0, psp          \n"
+        "b HardFault_Analisys   \n"
+    );
 }
 
 // TODO: better error feedback for below functions
@@ -635,25 +638,20 @@ void UsageFault_Handler(void)
     while (1);
 }
 
-__attribute__((naked))  void vApplicationMallocFailedHook(void)
+void vApplicationMallocFailedHook(void)
 {
-    uint32_t lr_val;
-    uint32_t *stack_ptr;
+    // not an exception: there is no stacked frame, build one with who asked for memory
+    uint32_t frame[8] = {0};
+    frame[5] = (uint32_t)__builtin_return_address(0);
+    frame[6] = (uint32_t)&vApplicationMallocFailedHook;
 
-    __asm volatile ("MOV %0, LR" : "=r" (lr_val));
-    if (lr_val & 0x04) {
-        stack_ptr = (uint32_t *)__get_PSP();
-    } else {
-        stack_ptr = (uint32_t *)__get_MSP();
-    }
-
-    HardFault_Analisys(stack_ptr);
+    // CONTROL.SPSEL: thread mode on the process stack, that is inside a task
+    fault_screen(frame, (__get_CONTROL() & 2) != 0);
 
     ledz_on(hardware_leds(0), BLUE);
     hardware_glcd_brightness(MAX_BRIGHTNESS);
 
     while(1);
-
 }
 
 void vApplicationIdleHook(void)
