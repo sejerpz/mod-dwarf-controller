@@ -620,8 +620,9 @@ void screen_page_index(uint8_t current, uint8_t available)
 
     //draw the indicator
     //we have 19 pixels available and possible 8 pages
-    uint8_t amount_of_pixel_per_page = (int)20/available;
-    uint8_t remaining_pixels = 20%available;
+    //no pages yet: what the Cortex-M3 draws, where 20/0 is 0
+    uint8_t amount_of_pixel_per_page = available ? (int)20/available : 0;
+    uint8_t remaining_pixels = available ? 20%available : 20;
 
     uint8_t i, page_bar_x = 1;;
     for (i = 0; i < current; i++)
