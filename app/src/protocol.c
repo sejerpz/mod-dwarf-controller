@@ -146,11 +146,69 @@ static int is_wildcard(const char *str)
 ************************************************************************************************************************
 */
 
+// a decimal integer, with its sign, and the spaces after it; NULL when there is none
+static const char *read_int(const char *p, int16_t *value)
+{
+    int32_t v = 0;
+    uint8_t negative = 0, digits = 0;
+
+    if (*p == '-')
+    {
+        negative = 1;
+        p++;
+    }
+
+    for (; *p >= '0' && *p <= '9'; p++, digits++)
+        v = v * 10 + (*p - '0');
+
+    if (!digits) return NULL;
+
+    *value = (int16_t)(negative ? -v : v);
+
+    while (*p == ' ') p++;
+    return p;
+}
+
+// sys_wbm and sys_wcl, the widget bitmaps and clears: hundreds a second, each with hundreds of hex digits.
+// Read here in one pass, without what the generic path costs for every character of them: the split into
+// a list, parse_quote on every argument, the search among the commands. 0 when the message is not one of
+// them, or not well formed: the generic path takes it then.
+static uint8_t parse_widget_command(msg_t *msg)
+{
+    const char *p = msg->data;
+    uint8_t bitmap;
+
+    if (msg->sender_id != SYSTEM_SERIAL) return 0;
+
+    if (strncmp(p, "sys_wbm ", 8) == 0) bitmap = 1;
+    else if (strncmp(p, "sys_wcl ", 8) == 0) bitmap = 0;
+    else return 0;
+
+    // the data length after the command
+    p += 8;
+    while (*p && *p != ' ') p++;
+    while (*p == ' ') p++;
+
+    int16_t area_id, x, y, width, height;
+    if (!(p = read_int(p, &area_id)) || !(p = read_int(p, &x)) || !(p = read_int(p, &y)) ||
+        !(p = read_int(p, &width)) || !(p = read_int(p, &height)))
+        return 0;
+
+    if (bitmap && !*p) return 0;
+
+    WA_draw(area_id, x, y, width, height, bitmap ? p : NULL);
+
+    SEND_TO_SENDER(msg->sender_id, "r 0", 3);
+    return 1;
+}
+
 void protocol_parse(msg_t *msg)
 {
     uint32_t i, j;
     int32_t index = NOT_FOUND;
     proto_t proto;
+
+    if (parse_widget_command(msg)) return;
 
     proto.list = strarr_split(msg->data, ' ');
     proto.list_count = strarr_length(proto.list);

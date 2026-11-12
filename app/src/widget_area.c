@@ -103,19 +103,18 @@ static widget_area_t *find_area(int16_t area_id)
 }
 
 // a digit that is not hex counts as 0, unlit pixels
-static uint8_t hex_nibble(char c)
-{
-    if (c >= '0' && c <= '9') return c - '0';
-    c |= 0x20;
-    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-    return 0;
-}
+// the value of a hex digit, 0 for any other character
+static const uint8_t g_hex_digit[256] = {
+    ['0'] = 0, ['1'] = 1, ['2'] = 2, ['3'] = 3, ['4'] = 4, ['5'] = 5, ['6'] = 6, ['7'] = 7, ['8'] = 8, ['9'] = 9,
+    ['a'] = 10, ['b'] = 11, ['c'] = 12, ['d'] = 13, ['e'] = 14, ['f'] = 15,
+    ['A'] = 10, ['B'] = 11, ['C'] = 12, ['D'] = 13, ['E'] = 14, ['F'] = 15,
+};
 
 // byte `index` of a row of hex digits `bytes` long, 0 outside of it
 static uint8_t hex_byte(const char *hex, int16_t index, uint16_t bytes)
 {
     if (!hex || index < 0 || index >= bytes) return 0;
-    return (hex_nibble(hex[index * 2]) << 4) | hex_nibble(hex[index * 2 + 1]);
+    return (uint8_t)((g_hex_digit[(uint8_t)hex[index * 2]] << 4) | g_hex_digit[(uint8_t)hex[index * 2 + 1]]);
 }
 
 // The display buffer is in pages: one byte holds 8 rows of a column, the top one in the lowest bit.
