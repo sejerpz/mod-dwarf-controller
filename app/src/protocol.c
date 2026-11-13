@@ -1089,7 +1089,7 @@ void cb_menu_item_changed(uint8_t serial_id, proto_t *proto)
     
     // optional more "id value" pairs: only as many as the message has
     uint8_t i;
-    for (i = 3; i + 1 < proto->list_count && i < ((MENU_ID_TOP+1) * 2); i+=2)
+    for (i = 3; i + 1u < proto->list_count && i < ((MENU_ID_TOP+1) * 2); i+=2)
     {
         if (atoi(proto->list[i]) != 0)
         {
