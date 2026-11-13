@@ -42,9 +42,11 @@
 ************************************************************************************************************************
 */
 
-#define BUFFER_IS_FULL(rb)      (rb->tail == (rb->head + 1) % rb->size)
+// the next index, wrapped without a division: these run for every byte through the buffers
+#define BUFFER_NEXT(rb,i)       ((i) + 1 == rb->size ? 0 : (i) + 1)
+#define BUFFER_IS_FULL(rb)      (rb->tail == BUFFER_NEXT(rb, rb->head))
 #define BUFFER_IS_EMPTY(rb)     (rb->head == rb->tail)
-#define BUFFER_INC(rb,idx)      (rb->idx = (rb->idx + 1) % rb->size)
+#define BUFFER_INC(rb,idx)      (rb->idx = BUFFER_NEXT(rb, rb->idx))
 
 
 /*
@@ -594,6 +596,21 @@ uint32_t ringbuff_read(ringbuff_t *rb, uint8_t *buffer, uint32_t buffer_size)
     return bytes;
 }
 
+// whether byte is in the buffer, scanning only up to it
+static uint8_t ringbuff_contains(ringbuff_t *rb, uint8_t byte)
+{
+    uint32_t tail = rb->tail;
+    const uint32_t head = rb->head;
+
+    while (tail != head)
+    {
+        if (rb->buffer[tail] == byte) return 1;
+        tail = BUFFER_NEXT(rb, tail);
+    }
+
+    return 0;
+}
+
 uint32_t ringbuff_read_until(ringbuff_t *rb, uint8_t *buffer, uint32_t buffer_size, uint8_t token)
 {
     uint32_t bytes = 0;
@@ -606,7 +623,7 @@ uint32_t ringbuff_read_until(ringbuff_t *rb, uint8_t *buffer, uint32_t buffer_si
         buffer_size = rb->size;
     }
 
-    if (ringbuff_count(rb, token) > 0)
+    if (ringbuff_contains(rb, token))
     {
         while (buffer_size > 0 && !BUFFER_IS_EMPTY(rb))
         {
@@ -676,7 +693,7 @@ uint32_t ringbuff_count(ringbuff_t *rb, uint8_t byte)
     while (tail != head)
     {
         data = rb->buffer[tail];
-        tail = (tail + 1) % rb->size;
+        tail = BUFFER_NEXT(rb, tail);
 
         if (data == byte) count++;
     }
@@ -695,7 +712,7 @@ void ringbuff_peek(ringbuff_t *rb, uint8_t *buffer, uint8_t peek_size)
     while (peek_size > 0 && tail != head)
     {
         *data++ = rb->buffer[tail];
-        tail = (tail + 1) % rb->size;
+        tail = BUFFER_NEXT(rb, tail);
         peek_size--;
     }
 }
@@ -719,7 +736,7 @@ int32_t ringbuff_search(ringbuff_t *rb, const uint8_t *to_search, uint32_t size)
         do
         {
             data = rb->buffer[tail];
-            tail = (tail + 1) % rb->size;
+            tail = BUFFER_NEXT(rb, tail);
             count++;
         } while (data != *s && tail != head);
 
@@ -731,7 +748,7 @@ int32_t ringbuff_search(ringbuff_t *rb, const uint8_t *to_search, uint32_t size)
         while (tail != head)
         {
             data = rb->buffer[tail];
-            tail = (tail + 1) % rb->size;
+            tail = BUFFER_NEXT(rb, tail);
 
             s++;
             if (data != *s)
@@ -765,7 +782,7 @@ int32_t ringbuff_search2(ringbuff_t *rb, const uint8_t *to_search, uint32_t size
     do
     {
         data = rb->buffer[tail];
-        tail = (tail + 1) % rb->size;
+        tail = BUFFER_NEXT(rb, tail);
 
         if (data == *s)
         {

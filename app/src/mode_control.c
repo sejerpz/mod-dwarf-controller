@@ -567,10 +567,12 @@ static void foot_control_rm(uint8_t hw_id)
 
     for (i = 0; i < MAX_FOOT_ASSIGNMENTS; i++)
     {
-        // if there is no controls assigned, load the default screen
-        if ((!g_foots[i]) && (naveg_get_current_mode() == MODE_CONTROL))
+        // if there is no controls assigned, load the default screen (in the control mode only, the others draw
+        // their own footer) and go on: there is nothing to compare
+        if (!g_foots[i])
         {
-            screen_footer(i, NULL, NULL, 0);
+            if (naveg_get_current_mode() == MODE_CONTROL)
+                screen_footer(i, NULL, NULL, 0);
             continue;
         }
 
@@ -1895,6 +1897,10 @@ void CM_set_state(void)
 
 void CM_set_foot_led(control_t *control, uint8_t update_led)
 {
+    // a footswitch with no assignment: its led was turned off by the caller
+    if (!control)
+        return;
+
     ledz_t *led = hardware_leds(control->hw_id - ENCODERS_COUNT);
 
     if (ledz_color_valid(MAX_COLOR_ID + control->hw_id-ENCODERS_COUNT+1))
