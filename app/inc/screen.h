@@ -103,6 +103,10 @@ typedef struct {
     const char *scrub;
 } plugin_manager_t;
 
+/* top row of the 36x27 knob boxes on the control screen: their contents (24 to 26 rows) sit in the middle
+ * of the frame, rows 12 to 48 inside its lines */
+#define SCREEN_ENCODER_Y    19
+
 /* how much of a description the overlay shows at once, and the widest line it wraps to */
 #define SCREEN_INFO_LINES   5
 #define SCREEN_INFO_ROOM    31
