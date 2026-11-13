@@ -11,6 +11,7 @@
 
 #include "FreeRTOS.h"
 #include "task.h"
+#include "semphr.h"
 
 #include "system.h"
 #include "config.h"
@@ -510,6 +511,24 @@ static char g_wifi_status_text[20];
 // reads without an answer in a row, N/A on the page only from WIFI_MAX_TIMEOUTS
 #define WIFI_MAX_TIMEOUTS 3
 static uint8_t g_wifi_timeouts = 0;
+// the actuators task (access point switched) and the displays task (page refresh, state check) both run
+// wifi-ap, and the cli has a single response buffer: one command at a time, its response copied before the next
+static xSemaphoreHandle g_wifi_mutex = NULL;
+
+static void wifi_lock(void)
+{
+    taskENTER_CRITICAL();
+    if (!g_wifi_mutex)
+        g_wifi_mutex = xSemaphoreCreateMutex();
+    taskEXIT_CRITICAL();
+
+    xSemaphoreTake(g_wifi_mutex, portMAX_DELAY);
+}
+
+static void wifi_unlock(void)
+{
+    xSemaphoreGive(g_wifi_mutex);
+}
 
 // "192.168.0.151" -> "192.168. 0.151" (2 lines)
 static void wifi_set_ip_text(const char *ip)
@@ -615,13 +634,20 @@ static void wifi_read_status(void)
 {
     char status[LINE_BUFFER_SIZE + 1] = {};
 
-    // the response buffer is reused by the next cli command: copy it
+    wifi_lock();
+
+    // the response buffer is reused by the next cli command: copy it. An empty line is the late output of a
+    // command that did not wait for it, not an answer
     const char *response = cli_command_wait("wifi-ap status", CLI_WIFI_RESPONSE_TIMEOUT);
+    if (response && !*response)
+        response = NULL;
     if (response)
     {
         strncpy(status, response, sizeof(status) - 1);
         g_wifi_timeouts = 0;
     }
+
+    wifi_unlock();
 
     // no answer in time on a busy system: keep the last state for a while
     if (response || g_wifi_state == WIFI_UNKNOWN || ++g_wifi_timeouts >= WIFI_MAX_TIMEOUTS)
@@ -685,8 +711,10 @@ void system_wifi_ap_cb(void *arg, int event)
         if ((int)item->data.value != item->data.selected)
         {
             // runs in background, the page shows STARTING/STOPPING
+            wifi_lock();
             cli_command_wait(((int)item->data.value == 1) ? "wifi-ap on -b" : "wifi-ap off -b",
                              CLI_WIFI_RESPONSE_TIMEOUT);
+            wifi_unlock();
             item->data.selected = item->data.value;
             wifi_read_status();
         }
@@ -736,8 +764,7 @@ void system_wifi_request_check(void)
  * or stopping, every WIFI_CHECK_INTERVAL. No polling otherwise: the access point
  * is switched only from the WIFI page, a change of the client connection is seen
  * at the next of those events.
- * Called by the displays task only, the one that refreshes the WIFI page too:
- * the cli has a single response buffer.
+ * Called by the displays task, the one that refreshes the WIFI page too.
  */
 #define WIFI_CHECK_INTERVAL 2000
 
@@ -772,7 +799,7 @@ void system_wifi_check(void)
         pending = 1;
 
     // nothing must be typed on the login prompt
-    if (!pending || !g_device_booted || cli_restore(RESTORE_STATUS) != LOGGED_ON_SYSTEM)
+    if (!pending || !g_device_booted || !cli_shell_ready())
         return;
 
     pending = 0;

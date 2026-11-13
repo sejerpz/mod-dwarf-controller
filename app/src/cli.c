@@ -409,6 +409,12 @@ const char* cli_command_wait(const char *command, uint32_t timeout_ms)
     return send_command(command, CLI_RETRIEVE_RESPONSE, timeout_ms / portTICK_RATE_MS);
 }
 
+// logged in and the shell configured: LOGGED_ON_SYSTEM is set already at the login prompt
+uint8_t cli_shell_ready(void)
+{
+    return (g_cli.status == LOGGED_ON_SYSTEM && g_cli.boot_step >= N_BOOT_STEPS);
+}
+
 const char* cli_systemctl(const char *command, const char *service)
 {
     if (!command || !service) return NULL;
