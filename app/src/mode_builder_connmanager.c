@@ -309,7 +309,7 @@ static void request_menu(int16_t node_id)
         i += int_to_str(g_own_is_output ? 0 : 1, &buffer[i], sizeof(buffer) - i, 0);
     }
 
-    buffer[i++] = 0;
+    buffer[i] = 0;
 
     ui_comm_webgui_send(buffer, i);
     ui_comm_webgui_wait_response();
@@ -341,7 +341,7 @@ static void request_disconnect(const bm_connection_t *connection, int16_t ours)
     i += int_to_str(to, &buffer[i], sizeof(buffer) - i, 0);
     buffer[i++] = ' ';
     i += int_to_str(connection->type, &buffer[i], sizeof(buffer) - i, 0);
-    buffer[i++] = 0;
+    buffer[i] = 0;
 
     send_and_wait(buffer, i);
 }
@@ -367,7 +367,7 @@ static void request_connect(int16_t ours, int16_t their_port)
     i += int_to_str(g_own_is_output ? their_port : g_own_port, &buffer[i], sizeof(buffer) - i, 0);
     buffer[i++] = ' ';
     i += int_to_str(g_own_bits, &buffer[i], sizeof(buffer) - i, 0);
-    buffer[i++] = 0;
+    buffer[i] = 0;
 
     send_and_wait(buffer, i);
 }

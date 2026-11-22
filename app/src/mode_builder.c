@@ -454,7 +454,7 @@ static void request_plugin_map(int16_t focus_id, uint8_t initial)
     // insert the node to centre on; ignored by mod-ui on an initial request
     i += int_to_str(focus_id, &buffer[i], sizeof(buffer) - i, 0);
 
-    buffer[i++] = 0;
+    buffer[i] = 0;
 
     // sends the data to GUI
     ui_comm_webgui_send(buffer, i);
@@ -524,7 +524,7 @@ static void request_plugin_list(int16_t first, int16_t focus_id)
     i += int_to_str(first, &buffer[i], sizeof(buffer) - i, 0);
     buffer[i++] = ' ';
     i += int_to_str(focus_id, &buffer[i], sizeof(buffer) - i, 0);
-    buffer[i++] = 0;
+    buffer[i] = 0;
 
     ui_comm_webgui_send(buffer, i);
     ui_comm_webgui_wait_response();
@@ -657,7 +657,7 @@ static void request_remove(int16_t node_id)
 
     i = copy_command((char *)buffer, CMD_BUILDER_PLUGIN_DELETE);
     i += int_to_str(node_id, &buffer[i], sizeof(buffer) - i, 0);
-    buffer[i++] = 0;
+    buffer[i] = 0;
 
     ui_comm_webgui_send(buffer, i);
     ui_comm_webgui_wait_response();
@@ -699,7 +699,7 @@ static void plugin_map_toggle_bypass(void)
 
     i = copy_command((char *)buffer, CMD_BUILDER_PLUGIN_BYPASS);
     i += int_to_str(node->id, &buffer[i], sizeof(buffer) - i, 0);
-    buffer[i++] = 0;
+    buffer[i] = 0;
 
     ui_comm_webgui_send(buffer, i);
     ui_comm_webgui_wait_response();
@@ -843,7 +843,7 @@ static void request_plugin_controls(const char* uid, uint8_t start_index, uint8_
     // insert count
     i += int_to_str(count, &buffer[i], sizeof(buffer) - i, 0);
 
-    buffer[i++] = 0;
+    buffer[i] = 0;
 
     // sends the data to GUI
     ui_comm_webgui_send(buffer, i);
@@ -1477,7 +1477,7 @@ static void request_change_notify(uint8_t on)
 
     i = copy_command((char *)buffer, CMD_BUILDER_PLUGIN_NOTIFY);
     i += int_to_str(on, &buffer[i], sizeof(buffer) - i, 0);
-    buffer[i++] = 0;
+    buffer[i] = 0;
 
     ui_comm_webgui_send(buffer, i);
     ui_comm_webgui_wait_response();

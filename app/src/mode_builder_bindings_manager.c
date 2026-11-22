@@ -251,7 +251,7 @@ static void request_actuators(void)
     ui_comm_webgui_clear_tx_buffer();
 
     i = copy_command((char *)buffer, CMD_BUILDER_BINDING_ACTUATORS);
-    buffer[i++] = 0;
+    buffer[i] = 0;
 
     ui_comm_webgui_send(buffer, i);
     ui_comm_webgui_wait_response();
@@ -272,7 +272,7 @@ static void request_params(uint16_t first)
     i += int_to_str(first, &buffer[i], sizeof(buffer) - i, 0);
     buffer[i++] = ' ';
     i += int_to_str(BB_MAX_PARAMS, &buffer[i], sizeof(buffer) - i, 0);
-    buffer[i++] = 0;
+    buffer[i] = 0;
 
     ui_comm_webgui_send(buffer, i);
     ui_comm_webgui_wait_response();
@@ -289,7 +289,7 @@ static void request_bindings(void)
 
     i = copy_command((char *)buffer, CMD_BUILDER_BINDING_LIST);
     i += int_to_str(g_page, &buffer[i], sizeof(buffer) - i, 0);
-    buffer[i++] = 0;
+    buffer[i] = 0;
 
     ui_comm_webgui_send(buffer, i);
     ui_comm_webgui_wait_response();
@@ -332,7 +332,7 @@ static void request_bind(int16_t param, int16_t actuator)
     i += int_to_str(g_page, &buffer[i], sizeof(buffer) - i, 0);
     buffer[i++] = ' ';
     i += int_to_str(actuator, &buffer[i], sizeof(buffer) - i, 0);
-    buffer[i++] = 0;
+    buffer[i] = 0;
 
     ui_comm_webgui_send(buffer, i);
     ui_comm_webgui_wait_response();
@@ -351,7 +351,7 @@ static void request_unbind(int16_t actuator)
     i += int_to_str(g_page, &buffer[i], sizeof(buffer) - i, 0);
     buffer[i++] = ' ';
     i += int_to_str(actuator, &buffer[i], sizeof(buffer) - i, 0);
-    buffer[i++] = 0;
+    buffer[i] = 0;
 
     ui_comm_webgui_send(buffer, i);
     ui_comm_webgui_wait_response();

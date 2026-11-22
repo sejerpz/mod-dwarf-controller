@@ -207,7 +207,7 @@ static void set_menu_item_value(uint16_t menu_id, uint16_t value)
     // copy the value
     i += int_to_str(value, &buffer[i], sizeof(buffer) - i, 0);
 
-    buffer[i++] = 0;
+    buffer[i] = 0;
 
     // sets the response callback
     ui_comm_webgui_set_response_cb(NULL, NULL);

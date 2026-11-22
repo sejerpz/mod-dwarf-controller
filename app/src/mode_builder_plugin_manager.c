@@ -313,7 +313,7 @@ static void request_info(void)
     i += int_to_str(g_plugin_hover, &buffer[i], sizeof(buffer) - i, 0);
     buffer[i++] = ' ';
     i += int_to_str(g_filter, &buffer[i], sizeof(buffer) - i, 0);
-    buffer[i++] = 0;
+    buffer[i] = 0;
 
     ui_comm_webgui_send(buffer, i);
     ui_comm_webgui_wait_begin();
@@ -333,7 +333,7 @@ static void request_initials(void)
     i += int_to_str(g_category_hover, &buffer[i], sizeof(buffer) - i, 0);
     buffer[i++] = ' ';
     i += int_to_str(g_filter, &buffer[i], sizeof(buffer) - i, 0);
-    buffer[i++] = 0;
+    buffer[i] = 0;
 
     ui_comm_webgui_send(buffer, i);
     ui_comm_webgui_wait_begin();
@@ -353,7 +353,7 @@ static void request_categories(void)
 
     i = copy_command((char *)buffer, CMD_BUILDER_CATALOG_CATEGORIES);
     i += int_to_str(g_filter, &buffer[i], sizeof(buffer) - i, 0);
-    buffer[i++] = 0;
+    buffer[i] = 0;
 
     ui_comm_webgui_send(buffer, i);
     ui_comm_webgui_wait_begin();
@@ -375,7 +375,7 @@ static void request_catalog(uint16_t first)
     i += int_to_str(g_filter, &buffer[i], sizeof(buffer) - i, 0);
     buffer[i++] = ' ';
     i += int_to_str((int32_t) first, &buffer[i], sizeof(buffer) - i, 0);
-    buffer[i++] = 0;
+    buffer[i] = 0;
 
     ui_comm_webgui_send(buffer, i);
     ui_comm_webgui_wait_begin();
@@ -422,7 +422,7 @@ static int16_t request_add(void)
     i += int_to_str(g_filter, &buffer[i], sizeof(buffer) - i, 0);
     buffer[i++] = ' ';
     i += int_to_str(g_anchor, &buffer[i], sizeof(buffer) - i, 0);
-    buffer[i++] = 0;
+    buffer[i] = 0;
 
     ui_comm_webgui_send(buffer, i);
     ui_comm_webgui_wait_begin();

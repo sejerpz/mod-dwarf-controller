@@ -64,7 +64,7 @@
 void ui_comm_init(void);
 
 //// webgui communication functions
-// sends a message to webgui
+// sends a message to webgui: data_size does not count the terminator, which is sent too, from data[data_size]
 void ui_comm_webgui_send(const char *data, uint32_t data_size);
 // read a message from webgui
 ringbuff_t* ui_comm_webgui_read(void);

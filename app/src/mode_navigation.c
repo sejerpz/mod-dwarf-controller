@@ -267,7 +267,7 @@ static void request_pedalboards(uint8_t dir, uint16_t bank_uid)
     // copy the bank uid
     i += int_to_str((bank_uid), &buffer[i], sizeof(buffer) - i, 0);
 
-    buffer[i++] = 0;
+    buffer[i] = 0;
 
     int32_t prev_hover = g_current_pedalboard;
     int32_t prev_selected = g_current_pedalboard;
@@ -403,7 +403,7 @@ static void request_snapshots(uint8_t dir)
     else
         i += int_to_str(g_snapshots->hover, &buffer[i], sizeof(buffer) - i, 0);
 
-    buffer[i++] = 0;
+    buffer[i] = 0;
 
     int32_t prev_hover = g_current_snapshot;
     int32_t prev_selected = g_current_snapshot;
