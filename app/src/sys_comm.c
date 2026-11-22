@@ -11,6 +11,7 @@
 
 #include "FreeRTOS.h"
 #include "semphr.h"
+#include "task.h"
 
 #include "mod-protocol.h"
 
@@ -182,7 +183,14 @@ void sys_comm_response_cb(void *data)
 // the flag went up when the command was sent, see sys_comm_send()
 void sys_comm_wait_response(void)
 {
-    while (g_system_blocked);
+    // a tick at a time, as ui_comm_webgui_wait_response()
+    const uint8_t can_sleep = xTaskGetSchedulerState() == taskSCHEDULER_RUNNING;
+
+    while (g_system_blocked)
+    {
+        if (can_sleep)
+            vTaskDelay(1);
+    }
 }
 
 //clear the ringbuffer

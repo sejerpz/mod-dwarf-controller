@@ -13,6 +13,7 @@
 
 #include "FreeRTOS.h"
 #include "semphr.h"
+#include "task.h"
 
 /*
 ************************************************************************************************************************
@@ -156,7 +157,15 @@ void ui_comm_webgui_response_cb(void *data)
 // the flag went up when the command was sent, see ui_comm_webgui_send()
 void ui_comm_webgui_wait_response(void)
 {
-    while (g_webgui_blocked);
+    // A tick at a time: a spin would keep the tasks below the caller off the processor until mod-ui
+    // answers, the display task among them, and the screen and the plugin widgets would stop meanwhile.
+    const uint8_t can_sleep = xTaskGetSchedulerState() == taskSCHEDULER_RUNNING;
+
+    while (g_webgui_blocked)
+    {
+        if (can_sleep)
+            vTaskDelay(1);
+    }
 }
 
 /*
