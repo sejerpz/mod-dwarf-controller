@@ -147,6 +147,7 @@ static SemaphoreHandle_t module_mutex = NULL;
 *           LOCAL FUNCTIONS
 ************************************************************************************************************************
 */
+static void control_update_step(control_t *control);
 static void encoder_control_add(control_t *control);
 static void encoder_control_rm(uint8_t hw_id);
 static void reset_list_encoders(void);
@@ -157,24 +158,9 @@ static uint8_t list_sync(void);
 static void request_control_page(control_t *control, uint8_t dir);
 static void send_control_set(control_t *control);
 
-// control assigned to display
-static void encoder_control_add(control_t *control)
+// the encoder position (step) of a control from its value
+static void control_update_step(control_t *control)
 {
-    if (control->hw_id >= ENCODERS_COUNT) return;
-
-    xSemaphoreTake(module_mutex, portMAX_DELAY);
-    // checks if is already a control assigned in this display and remove it
-    control_t *prev_control = plugin_edit.controls[control->hw_id];
-
-    // cleanup previous
-    if (prev_control)
-    {
-        data_free_control(prev_control);
-    }
-
-    // assign the new control
-    plugin_edit.controls[control->hw_id] = control;
-
     if (control->properties & (FLAG_CONTROL_REVERSE | FLAG_CONTROL_ENUMERATION | FLAG_CONTROL_SCALE_POINTS))
     {
         control->step = 0;
@@ -187,9 +173,6 @@ static void encoder_control_add(control_t *control)
                 break;
             }
         }
-
-        clone_list_encoders(control);
-
     }
     else if (control->properties & FLAG_CONTROL_LOGARITHMIC)
     {
@@ -221,6 +204,30 @@ static void encoder_control_add(control_t *control)
         control->step =
             (control->value - control->minimum) / ((control->maximum - control->minimum) / control->steps);
     }
+}
+
+// control assigned to display
+static void encoder_control_add(control_t *control)
+{
+    if (control->hw_id >= ENCODERS_COUNT) return;
+
+    xSemaphoreTake(module_mutex, portMAX_DELAY);
+    // checks if is already a control assigned in this display and remove it
+    control_t *prev_control = plugin_edit.controls[control->hw_id];
+
+    // cleanup previous
+    if (prev_control)
+    {
+        data_free_control(prev_control);
+    }
+
+    // assign the new control
+    plugin_edit.controls[control->hw_id] = control;
+
+    control_update_step(control);
+
+    if (control->properties & (FLAG_CONTROL_REVERSE | FLAG_CONTROL_ENUMERATION | FLAG_CONTROL_SCALE_POINTS))
+        clone_list_encoders(control);
 
     /*
      * Only where the encoders are what is on the panel. A control can arrive while the
@@ -1907,6 +1914,64 @@ bool BM_add_control(control_t *control, uint8_t protocol)
     }
     else
         return false;
+}
+
+/*
+ * A value of a control on the plugin edit page changed on the host side (bcts): a preset loaded
+ * from the builder sends the new values of the page this way, one per encoder.
+ */
+bool BM_set_control(uint8_t hw_id, float value)
+{
+    if (!g_initialized) return false;
+    if (hw_id >= ENCODERS_COUNT) return false;
+
+    xSemaphoreTake(module_mutex, portMAX_DELAY);
+
+    control_t *control = plugin_edit.controls[hw_id];
+    if (!control)
+    {
+        xSemaphoreGive(module_mutex);
+        return false;
+    }
+
+    if (value < control->minimum)
+        value = control->minimum;
+    else if (value > control->maximum)
+        value = control->maximum;
+
+    if (control->properties & (FLAG_CONTROL_REVERSE | FLAG_CONTROL_ENUMERATION | FLAG_CONTROL_SCALE_POINTS))
+    {
+        // only within the page of options the encoder holds; the index on the host moves as much
+        // as the step does
+        uint8_t i;
+        for (i = 0; i < control->scale_points_count; i++)
+        {
+            if (floats_are_equal(value, control->scale_points[i]->value))
+            {
+                control->scale_point_index += i - control->step;
+                control->step = i;
+                control->value = value;
+                clone_list_encoders(control);
+                break;
+            }
+        }
+    }
+    else
+    {
+        control->value = value;
+        control_update_step(control);
+    }
+
+    if (naveg_get_current_mode() == MODE_BUILDER && uiState == PLUGIN_EDIT)
+    {
+        if (hardware_get_overlay_counter() && (plugin_edit.current_overlay_control_index == hw_id))
+            BM_print_control_overlay(control, ENCODER_LIST_TIMEOUT);
+        else if (plugin_edit.current_overlay_control_index == -1)
+            screen_encoder(control, hw_id);
+    }
+
+    xSemaphoreGive(module_mutex);
+    return true;
 }
 
 void BM_print_control_overlay(control_t *control, uint16_t overlay_time)

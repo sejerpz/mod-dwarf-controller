@@ -389,6 +389,7 @@ void protocol_init(void)
     protocol_add_command(CMD_SNAPSHOT_NAME_SET, cb_snapshot_name);
     protocol_add_command(CMD_DWARF_PAGES_AVAILABLE, cb_pages_available);
     protocol_add_command(CMD_BUILDER_PLUGIN_UPDATED, cb_plugin_map_updated);
+    protocol_add_command(CMD_BUILDER_CONTROL_SET, cb_builder_control_set);
     protocol_add_command(CMD_PEDALBOARD_LOADING_BEGIN, cb_pedalboard_load_begin);
     protocol_add_command(CMD_PEDALBOARD_LOADING_END, cb_pedalboard_load_end);
     protocol_add_command(CMD_SELFTEST_SKIP_CONTROL_ENABLE, cb_set_selftest_control_skip);
@@ -1193,6 +1194,16 @@ void cb_plugin_map_updated(uint8_t serial_id, proto_t *proto)
     protocol_send_response(CMD_RESPONSE, 0, proto);
 
     BM_plugin_map_stale();
+}
+
+// a value of the builder's plugin edit page changed on the host (a preset loaded from the builder)
+void cb_builder_control_set(uint8_t serial_id, proto_t *proto)
+{
+    UNUSED_PARAM(serial_id);
+
+    uint8_t ok = BM_set_control(atoi(proto->list[1]), atof(proto->list[2]));
+
+    protocol_send_response(CMD_RESPONSE, ok ? 0 : -1, proto);
 }
 
 /*

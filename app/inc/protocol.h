@@ -119,6 +119,7 @@ void cb_pedalboard_name(uint8_t serial_id, proto_t *proto);
 void cb_snapshot_name(uint8_t serial_id, proto_t *proto);
 void cb_pages_available(uint8_t serial_id, proto_t *proto);
 void cb_plugin_map_updated(uint8_t serial_id, proto_t *proto);
+void cb_builder_control_set(uint8_t serial_id, proto_t *proto);
 void cb_pedalboard_load_begin(uint8_t serial_id, proto_t *proto);
 void cb_pedalboard_load_end(uint8_t serial_id, proto_t *proto);
 void cb_clear_eeprom(uint8_t serial_id, proto_t *proto);
